@@ -47,12 +47,14 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = FastAPI(title="AI House Designer API", version="0.1.0")
 
-origins = [
+default_origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:3001",
     "http://127.0.0.1:3001",
 ]
+env_origins = os.getenv("CORS_ORIGINS", "")
+origins = default_origins + ([o.strip() for o in env_origins.split(",") if o.strip()] if env_origins else [])
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,

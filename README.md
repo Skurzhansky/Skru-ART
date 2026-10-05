@@ -444,28 +444,52 @@ OPENAI_API_KEY=sk-your-real-key
 SECRET_KEY=your-strong-secret
 ```
 
-### Ручной деплой
+### Пошаговый деплой (Vercel + Render)
 
-**Backend (Render/Railway/Heroku):**
+#### Шаг 1: Backend на Render
+
+1. Зайди на [render.com](https://render.com) → **New** → **Web Service**
+2. Подключи GitHub репозиторий `Skurzhansky/Skru-ART`
+3. Настройки:
+   - **Name:** `house-designer-api`
+   - **Runtime:** `Docker`
+   - **Dockerfile path:** `./backend/Dockerfile`
+   - **Docker context:** `./backend`
+4. Создай PostgreSQL: **New** → **PostgreSQL** → имя `house-designer-db`
+5. В Web Service добавь переменные:
+   - `DATABASE_URL` → выбери из созданной БД
+   - `OPENAI_API_KEY` → твой ключ
+   - `SECRET_KEY` → любой сложный ключ
+   - `CORS_ORIGINS` → `https://your-project.vercel.app` (URL frontend после шага 2)
+6. Деплой — получишь URL вида `https://house-designer-api.onrender.com`
+
+#### Шаг 2: Frontend на Vercel
+
+1. Зайди на [vercel.com](https://vercel.com) → **Add New** → **Project**
+2. Импортируй `Skurzhansky/Skru-ART`
+3. Настройки:
+   - **Framework:** Next.js
+   - **Root Directory:** `frontend`
+4. В **Environment Variables** добавь:
+   - `NEXT_PUBLIC_API_URL` = `https://house-designer-api.onrender.com`
+5. Деплой — получишь URL вида `https://skru-art.vercel.app`
+
+#### Шаг 3: Связка
+
+1. В Render измени `CORS_ORIGINS` на URL твоего Vercel-приложения
+2. Перезапусти backend (Manual Deploy → Deploy latest)
+
+---
+
+### Альтернатива: всё на Railway
 
 ```bash
-cd backend
-pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port $PORT
+# Railway подключает GitHub и автоматически определяет Dockerfile
+# Frontend: отдельный сервис с root directory frontend/
+# Backend: Dockerfile + PostgreSQL plugin
 ```
 
-Установи `DATABASE_URL` на PostgreSQL и `SECRET_KEY`.
-
-**Frontend (Vercel/Netlify):**
-
-```bash
-cd frontend
-npm install
-npm run build
-npm start
-```
-
-Установи `NEXT_PUBLIC_API_URL` на URL backend.
+---
 
 ---
 
