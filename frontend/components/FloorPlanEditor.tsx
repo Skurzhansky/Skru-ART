@@ -2,7 +2,7 @@
 
 import React, { useRef, useState, useMemo, useEffect, useCallback } from "react";
 import { FloorPlan, Room } from "@/lib/types";
-import { Plus, Trash2, Grid3X3, Undo2, Redo2 } from "lucide-react";
+import { Plus, Trash2, Grid3X3, Undo2, Redo2, ZoomIn, ZoomOut, Maximize } from "lucide-react";
 
 interface FloorPlanEditorProps {
   floorPlan: FloorPlan;
@@ -13,6 +13,8 @@ const SCALE = 60;
 const PADDING = 40;
 const SNAP = 0.5;
 const MAX_HISTORY = 50;
+const MIN_SCALE = 0.1;
+const MAX_SCALE = 5;
 
 const roomColors: Record<string, string> = {
   living: "#dbeafe",
@@ -38,16 +40,19 @@ function plansEqual(a: FloorPlan, b: FloorPlan) {
 
 export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditorProps) {
   const svgRef = useRef<SVGSVGElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [history, setHistory] = useState<FloorPlan[]>([floorPlan]);
   const [historyIndex, setHistoryIndex] = useState(0);
   const [draggingRoom, setDraggingRoom] = useState<number | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [dragStartPlan, setDragStartPlan] = useState<FloorPlan | null>(null);
   const [selectedRoom, setSelectedRoom] = useState<number | null>(null);
+  const [view, setView] = useState({ scale: 1, panX: 0, panY: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0, panX: 0, panY: 0 });
 
   const currentPlan = history[historyIndex];
 
-  // Sync external plan changes (e.g. AI generation) into history
   useEffect(() => {
     if (!plansEqual(floorPlan, currentPlan)) {
       const next = history.slice(0, historyIndex + 1);
@@ -56,6 +61,23 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
       setHistoryIndex(trimmed.length);
     }
   }, [floorPlan]);
+
+  useEffect(() => {
+    // Fit view to content when component mounts
+    fitView();
+  }, []);
+
+  const bounds = useMemo(() => {
+    const xs = currentPlan.rooms.map((r) => r.x + r.width);
+    const ys = currentPlan.rooms.map((r) => r.y + r.height);
+    return {
+      width: Math.max(...xs, 10) * SCALE + PADDING * 2,
+      height: Math.max(...ys, 10) * SCALE + PADDING * 2,
+    };
+  }, [currentPlan]);
+
+  const toSvgX = (x: number) => PADDING + x * SCALE;
+  const toSvgY = (y: number) => bounds.height - (PADDING + y * SCALE);
 
   const commit = useCallback(
     (plan: FloorPlan) => {
@@ -97,7 +119,6 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
     }
   }, [history, historyIndex, onChange]);
 
-  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
@@ -117,19 +138,59 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [undo, redo]);
 
-  const bounds = useMemo(() => {
-    const xs = currentPlan.rooms.map((r) => r.x + r.width);
-    const ys = currentPlan.rooms.map((r) => r.y + r.height);
-    return {
-      width: Math.max(...xs, 10) * SCALE + PADDING * 2,
-      height: Math.max(...ys, 10) * SCALE + PADDING * 2,
-    };
-  }, [currentPlan]);
+  const screenToContent = useCallback(
+    (clientX: number, clientY: number) => {
+      const rect = svgRef.current?.getBoundingClientRect();
+      if (!rect) return { x: 0, y: 0 };
+      return {
+        x: (clientX - rect.left - view.panX) / view.scale,
+        y: (clientY - rect.top - view.panY) / view.scale,
+      };
+    },
+    [view]
+  );
 
-  const toSvgX = (x: number) => PADDING + x * SCALE;
-  const toSvgY = (y: number) => bounds.height - (PADDING + y * SCALE);
+  const fitView = useCallback(() => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const scaleX = rect.width / bounds.width;
+    const scaleY = rect.height / bounds.height;
+    const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.min(scaleX, scaleY) * 0.9));
+    const panX = (rect.width - bounds.width * scale) / 2;
+    const panY = (rect.height - bounds.height * scale) / 2;
+    setView({ scale, panX, panY });
+  }, [bounds]);
 
-  const handleCanvasClick = () => {
+  const zoomBy = useCallback(
+    (factor: number, centerX?: number, centerY?: number) => {
+      const rect = svgRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const cx = centerX ?? rect.width / 2;
+      const cy = centerY ?? rect.height / 2;
+      const contentX = (cx - view.panX) / view.scale;
+      const contentY = (cy - view.panY) / view.scale;
+      const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, view.scale * factor));
+      setView({
+        scale: newScale,
+        panX: cx - contentX * newScale,
+        panY: cy - contentY * newScale,
+      });
+    },
+    [view]
+  );
+
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const factor = e.deltaY > 0 ? 0.9 : 1.1;
+    zoomBy(factor, e.clientX - rect.left, e.clientY - rect.top);
+  };
+
+  const handleSvgMouseDown = (e: React.MouseEvent) => {
+    if (draggingRoom != null) return;
+    setIsPanning(true);
+    setPanStart({ x: e.clientX, y: e.clientY, panX: view.panX, panY: view.panY });
     setSelectedRoom(null);
   };
 
@@ -138,36 +199,35 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
     setSelectedRoom(room.id);
     setDraggingRoom(room.id);
     setDragStartPlan(currentPlan);
-    const svg = svgRef.current;
-    if (!svg) return;
-    const pt = svg.createSVGPoint();
-    pt.x = e.clientX;
-    pt.y = e.clientY;
-    const cursorPt = pt.matrixTransform(svg.getScreenCTM()?.inverse());
+    const content = screenToContent(e.clientX, e.clientY);
     setDragOffset({
-      x: cursorPt.x - toSvgX(room.x),
-      y: cursorPt.y - toSvgY(room.y),
+      x: content.x - toSvgX(room.x),
+      y: content.y - toSvgY(room.y),
     });
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (draggingRoom == null || !svgRef.current) return;
-    const svg = svgRef.current;
-    const pt = svg.createSVGPoint();
-    pt.x = e.clientX;
-    pt.y = e.clientY;
-    const cursorPt = pt.matrixTransform(svg.getScreenCTM()?.inverse());
+    if (draggingRoom != null) {
+      const content = screenToContent(e.clientX, e.clientY);
+      const newSvgX = content.x - dragOffset.x;
+      const newSvgY = content.y - dragOffset.y;
+      const newX = Math.max(0, snap((newSvgX - PADDING) / SCALE, SNAP));
+      const newY = Math.max(0, snap((bounds.height - newSvgY - PADDING) / SCALE, SNAP));
 
-    const rawX = (cursorPt.x - dragOffset.x - PADDING) / SCALE;
-    const rawY = (bounds.height - cursorPt.y + dragOffset.y - PADDING) / SCALE;
+      replaceCurrent({
+        ...currentPlan,
+        rooms: currentPlan.rooms.map((r) => (r.id === draggingRoom ? { ...r, x: newX, y: newY } : r)),
+      });
+      return;
+    }
 
-    const newX = Math.max(0, snap(rawX, SNAP));
-    const newY = Math.max(0, snap(rawY, SNAP));
-
-    replaceCurrent({
-      ...currentPlan,
-      rooms: currentPlan.rooms.map((r) => (r.id === draggingRoom ? { ...r, x: newX, y: newY } : r)),
-    });
+    if (isPanning) {
+      setView({
+        ...view,
+        panX: panStart.panX + (e.clientX - panStart.x),
+        panY: panStart.panY + (e.clientY - panStart.y),
+      });
+    }
   };
 
   const handleMouseUp = () => {
@@ -176,6 +236,7 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
     }
     setDraggingRoom(null);
     setDragStartPlan(null);
+    setIsPanning(false);
   };
 
   const updateRoom = (id: number, field: keyof Room, value: any) => {
@@ -247,6 +308,32 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
             </button>
           </div>
 
+          <div className="flex items-center bg-white border rounded-lg overflow-hidden">
+            <button
+              onClick={() => zoomBy(0.9)}
+              title="Уменьшить"
+              className="flex items-center gap-1 px-2.5 py-1.5 text-sm hover:bg-slate-100 transition"
+            >
+              <ZoomOut className="h-4 w-4" />
+            </button>
+            <div className="w-px h-5 bg-slate-200" />
+            <button
+              onClick={() => zoomBy(1.1)}
+              title="Увеличить"
+              className="flex items-center gap-1 px-2.5 py-1.5 text-sm hover:bg-slate-100 transition"
+            >
+              <ZoomIn className="h-4 w-4" />
+            </button>
+            <div className="w-px h-5 bg-slate-200" />
+            <button
+              onClick={fitView}
+              title="По размеру окна"
+              className="flex items-center gap-1 px-2.5 py-1.5 text-sm hover:bg-slate-100 transition"
+            >
+              <Maximize className="h-4 w-4" />
+            </button>
+          </div>
+
           {selected && (
             <button
               onClick={() => deleteRoom(selected.id)}
@@ -266,94 +353,99 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
         </div>
       </div>
 
-      <div className="flex-1 bg-white rounded-xl shadow overflow-auto border">
+      <div ref={containerRef} className="flex-1 bg-white rounded-xl shadow overflow-hidden border relative">
         <svg
           ref={svgRef}
-          width={bounds.width}
-          height={bounds.height}
+          width="100%"
+          height="100%"
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
-          onClick={handleCanvasClick}
-          className="cursor-crosshair block"
+          onMouseDown={handleSvgMouseDown}
+          onWheel={handleWheel}
+          className={`block ${draggingRoom != null ? "cursor-move" : isPanning ? "cursor-grabbing" : "cursor-grab"}`}
         >
           <defs>
             <pattern id="grid" width={SCALE} height={SCALE} patternUnits="userSpaceOnUse">
               <path d={`M ${SCALE} 0 L 0 0 0 ${SCALE}`} fill="none" stroke="#e2e8f0" strokeWidth={1} />
             </pattern>
           </defs>
-          <rect width={bounds.width} height={bounds.height} fill="url(#grid)" />
 
-          {currentPlan.walls.map((w, i) => (
-            <line
-              key={`wall-${i}`}
-              x1={toSvgX(w.x1)}
-              y1={toSvgY(w.y1)}
-              x2={toSvgX(w.x2)}
-              y2={toSvgY(w.y2)}
-              stroke="#334155"
-              strokeWidth={Math.max(2, w.thickness * SCALE)}
-              strokeLinecap="square"
-            />
-          ))}
+          <g transform={`translate(${view.panX}, ${view.panY}) scale(${view.scale})`}>
+            <rect x={-PADDING} y={-PADDING} width={bounds.width + PADDING * 2} height={bounds.height + PADDING * 2} fill="white" />
+            <rect x={0} y={0} width={bounds.width} height={bounds.height} fill="url(#grid)" />
 
-          {currentPlan.rooms.map((room) => (
-            <g key={room.id} onMouseDown={(e) => handleMouseDown(e, room)}>
-              <rect
-                x={toSvgX(room.x)}
-                y={toSvgY(room.y) - room.height * SCALE}
-                width={room.width * SCALE}
-                height={room.height * SCALE}
-                fill={roomColors[room.type] || roomColors.room}
-                stroke={selectedRoom === room.id ? "#2563eb" : "#64748b"}
-                strokeWidth={selectedRoom === room.id ? 3 : 1}
-                className="hover:stroke-blue-500 transition-colors"
-                style={{ cursor: "move" }}
+            {currentPlan.walls.map((w, i) => (
+              <line
+                key={`wall-${i}`}
+                x1={toSvgX(w.x1)}
+                y1={toSvgY(w.y1)}
+                x2={toSvgX(w.x2)}
+                y2={toSvgY(w.y2)}
+                stroke="#334155"
+                strokeWidth={Math.max(2, w.thickness * SCALE)}
+                strokeLinecap="square"
               />
-              <text
-                x={toSvgX(room.x) + (room.width * SCALE) / 2}
-                y={toSvgY(room.y) - (room.height * SCALE) / 2}
-                textAnchor="middle"
-                dominantBaseline="middle"
-                className="text-xs fill-slate-700 pointer-events-none select-none font-medium"
-              >
-                {room.name}
-              </text>
-              <text
-                x={toSvgX(room.x) + (room.width * SCALE) / 2}
-                y={toSvgY(room.y) - (room.height * SCALE) / 2 + 14}
-                textAnchor="middle"
-                dominantBaseline="middle"
-                className="text-[10px] fill-slate-500 pointer-events-none select-none"
-              >
-                {room.width}×{room.height} м
-              </text>
-            </g>
-          ))}
+            ))}
 
-          {currentPlan.doors.map((d, i) => (
-            <rect
-              key={`door-${i}`}
-              x={toSvgX(d.x)}
-              y={d.orientation === "horizontal" ? toSvgY(d.y) - 4 : toSvgY(d.y)}
-              width={d.orientation === "horizontal" ? d.width * SCALE : 8}
-              height={d.orientation === "horizontal" ? 8 : d.width * SCALE}
-              fill="#f59e0b"
-              rx={2}
-            />
-          ))}
+            {currentPlan.rooms.map((room) => (
+              <g key={room.id} onMouseDown={(e) => handleMouseDown(e, room)}>
+                <rect
+                  x={toSvgX(room.x)}
+                  y={toSvgY(room.y) - room.height * SCALE}
+                  width={room.width * SCALE}
+                  height={room.height * SCALE}
+                  fill={roomColors[room.type] || roomColors.room}
+                  stroke={selectedRoom === room.id ? "#2563eb" : "#64748b"}
+                  strokeWidth={selectedRoom === room.id ? 3 : 1}
+                  className="hover:stroke-blue-500 transition-colors"
+                  style={{ cursor: "move" }}
+                />
+                <text
+                  x={toSvgX(room.x) + (room.width * SCALE) / 2}
+                  y={toSvgY(room.y) - (room.height * SCALE) / 2}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  className="text-xs fill-slate-700 pointer-events-none select-none font-medium"
+                >
+                  {room.name}
+                </text>
+                <text
+                  x={toSvgX(room.x) + (room.width * SCALE) / 2}
+                  y={toSvgY(room.y) - (room.height * SCALE) / 2 + 14}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  className="text-[10px] fill-slate-500 pointer-events-none select-none"
+                >
+                  {room.width}×{room.height} м
+                </text>
+              </g>
+            ))}
 
-          {currentPlan.windows.map((w, i) => (
-            <rect
-              key={`window-${i}`}
-              x={toSvgX(w.x)}
-              y={w.orientation === "horizontal" ? toSvgY(w.y) - 3 : toSvgY(w.y)}
-              width={w.orientation === "horizontal" ? w.width * SCALE : 6}
-              height={w.orientation === "horizontal" ? 6 : w.width * SCALE}
-              fill="#38bdf8"
-              rx={2}
-            />
-          ))}
+            {currentPlan.doors.map((d, i) => (
+              <rect
+                key={`door-${i}`}
+                x={toSvgX(d.x)}
+                y={d.orientation === "horizontal" ? toSvgY(d.y) - 4 : toSvgY(d.y)}
+                width={d.orientation === "horizontal" ? d.width * SCALE : 8}
+                height={d.orientation === "horizontal" ? 8 : d.width * SCALE}
+                fill="#f59e0b"
+                rx={2}
+              />
+            ))}
+
+            {currentPlan.windows.map((w, i) => (
+              <rect
+                key={`window-${i}`}
+                x={toSvgX(w.x)}
+                y={w.orientation === "horizontal" ? toSvgY(w.y) - 3 : toSvgY(w.y)}
+                width={w.orientation === "horizontal" ? w.width * SCALE : 6}
+                height={w.orientation === "horizontal" ? 6 : w.width * SCALE}
+                fill="#38bdf8"
+                rx={2}
+              />
+            ))}
+          </g>
         </svg>
       </div>
 
