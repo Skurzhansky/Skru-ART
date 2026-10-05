@@ -158,6 +158,11 @@ export default function ProjectPage() {
             project={project}
             floorPlan={floorPlan}
             onPlanGenerated={(plan) => setFloorPlan(plan)}
+            onProjectUpdate={() =>
+              getProject(project.id)
+                .then(setProject)
+                .catch(console.error)
+            }
           />
           <div className="border-t" />
           <CostEstimatePanel floorPlan={floorPlan} estimate={estimate} onEstimate={setEstimate} />

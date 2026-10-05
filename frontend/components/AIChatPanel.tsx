@@ -1,28 +1,69 @@
 "use client";
 
-import React, { useState } from "react";
-import { sendChat, generatePlan } from "@/lib/api";
+import React, { useState, useEffect } from "react";
+import { sendChat, generatePlan, updateProject } from "@/lib/api";
 import { Project, FloorPlan, ChatMessage } from "@/lib/types";
-import { Send, Sparkles, Loader2 } from "lucide-react";
+import { Send, Sparkles, Loader2, SlidersHorizontal } from "lucide-react";
 
 interface AIChatPanelProps {
   project: Project;
   floorPlan: FloorPlan;
   onPlanGenerated: (plan: FloorPlan) => void;
+  onProjectUpdate?: () => void;
 }
 
-export default function AIChatPanel({ project, floorPlan, onPlanGenerated }: AIChatPanelProps) {
+interface PlanParams {
+  area: string;
+  floors: string;
+  budget: string;
+  style: string;
+  rooms: string;
+}
+
+export default function AIChatPanel({ project, floorPlan, onPlanGenerated, onProjectUpdate }: AIChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [showParams, setShowParams] = useState(false);
+  const [params, setParams] = useState<PlanParams>(() => {
+    const p = project.parameters || {};
+    return {
+      area: p.area?.toString() || "100",
+      floors: p.floors?.toString() || "1",
+      budget: p.budget?.toString() || "",
+      style: p.style?.toString() || "современный",
+      rooms: Array.isArray(p.rooms) ? p.rooms.join(", ") : "Гостиная, Кухня, Спальня, Ванная",
+    };
+  });
 
   const context = {
     title: project.title,
     description: project.description,
-    parameters: project.parameters,
+    parameters: { ...project.parameters, ...paramsToObject(params) },
     current_floor_plan: floorPlan,
   };
+
+  function paramsToObject(p: PlanParams) {
+    return {
+      area: parseFloat(p.area) || undefined,
+      floors: parseInt(p.floors) || 1,
+      budget: parseFloat(p.budget) || undefined,
+      style: p.style,
+      rooms: p.rooms.split(",").map((r) => r.trim()).filter(Boolean),
+    };
+  }
+
+  useEffect(() => {
+    const p = project.parameters || {};
+    setParams({
+      area: p.area?.toString() || "100",
+      floors: p.floors?.toString() || "1",
+      budget: p.budget?.toString() || "",
+      style: p.style?.toString() || "современный",
+      rooms: Array.isArray(p.rooms) ? p.rooms.join(", ") : params.rooms,
+    });
+  }, [project.parameters]);
 
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -45,23 +86,38 @@ export default function AIChatPanel({ project, floorPlan, onPlanGenerated }: AIC
   const handleGeneratePlan = async () => {
     setGenerating(true);
     try {
+      const planParams = paramsToObject(params);
       const plan = await generatePlan({
         prompt: input || `Создай планировку для проекта "${project.title}"`,
-        area: 100,
-        floors: 1,
-        style: "современный",
-        rooms: ["Гостиная", "Кухня", "Спальня", "Ванная"],
+        area: planParams.area,
+        floors: planParams.floors,
+        budget: planParams.budget,
+        style: planParams.style,
+        rooms: planParams.rooms,
       });
+
+      // Save parameters used for generation
+      await updateProject(project.id, { parameters: planParams });
+      onProjectUpdate?.();
+
       onPlanGenerated(plan);
       setMessages([
         ...messages,
-        { role: "assistant", content: "Планировка сгенерирована. Вы можете отредактировать её на холсте." },
+        {
+          role: "assistant",
+          content: `Планировка сгенерирована (${planParams.floors} этаж., ~${planParams.area || "?"} м², стиль: ${planParams.style}). Вы можете отредактировать её на холсте.`,
+        },
       ]);
+      setInput("");
     } catch (err: any) {
-      setMessages([...messages, { role: "assistant", content: "Ошибка генерации планировки." }]);
+      setMessages([...messages, { role: "assistant", content: "Ошибка генерации планировки. Убедитесь, что в backend задан OPENAI_API_KEY." }]);
     } finally {
       setGenerating(false);
     }
+  };
+
+  const updateParam = (field: keyof PlanParams, value: string) => {
+    setParams((prev) => ({ ...prev, [field]: value }));
   };
 
   return (
@@ -74,7 +130,7 @@ export default function AIChatPanel({ project, floorPlan, onPlanGenerated }: AIC
       <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50/50">
         {messages.length === 0 && (
           <p className="text-sm text-slate-400 text-center mt-10">
-            Задайте вопрос архитектору ИИ или попросите сгенерировать планировку.
+            Задайте вопрос архитектору ИИ или настройте параметры и сгенерируйте планировку.
           </p>
         )}
         {messages.map((m, i) => (
@@ -100,7 +156,7 @@ export default function AIChatPanel({ project, floorPlan, onPlanGenerated }: AIC
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Напишите запрос..."
+            placeholder="Напишите запрос или описание пожеланий..."
             className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <button
@@ -111,6 +167,76 @@ export default function AIChatPanel({ project, floorPlan, onPlanGenerated }: AIC
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </button>
         </div>
+
+        <button
+          type="button"
+          onClick={() => setShowParams((s) => !s)}
+          className="flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 mb-2"
+        >
+          <SlidersHorizontal className="h-4 w-4" />
+          {showParams ? "Скрыть параметры генерации" : "Параметры генерации"}
+        </button>
+
+        {showParams && (
+          <div className="grid grid-cols-2 gap-2 mb-3 text-sm">
+            <div>
+              <label className="text-xs text-slate-500">Площадь (м²)</label>
+              <input
+                type="number"
+                min={10}
+                value={params.area}
+                onChange={(e) => updateParam("area", e.target.value)}
+                className="w-full border rounded px-2 py-1"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500">Этажей</label>
+              <input
+                type="number"
+                min={1}
+                max={5}
+                value={params.floors}
+                onChange={(e) => updateParam("floors", e.target.value)}
+                className="w-full border rounded px-2 py-1"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500">Бюджет (руб.)</label>
+              <input
+                type="number"
+                min={0}
+                value={params.budget}
+                onChange={(e) => updateParam("budget", e.target.value)}
+                className="w-full border rounded px-2 py-1"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500">Стиль</label>
+              <select
+                value={params.style}
+                onChange={(e) => updateParam("style", e.target.value)}
+                className="w-full border rounded px-2 py-1"
+              >
+                <option value="современный">Современный</option>
+                <option value="классический">Классический</option>
+                <option value="минимализм">Минимализм</option>
+                <option value="скандинавский">Скандинавский</option>
+                <option value="лофт">Лофт</option>
+                <option value="деревенский">Деревенский/загородный</option>
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs text-slate-500">Комнаты (через запятую)</label>
+              <input
+                type="text"
+                value={params.rooms}
+                onChange={(e) => updateParam("rooms", e.target.value)}
+                className="w-full border rounded px-2 py-1"
+              />
+            </div>
+          </div>
+        )}
+
         <button
           type="button"
           onClick={handleGeneratePlan}
