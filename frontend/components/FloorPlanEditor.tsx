@@ -2,6 +2,7 @@
 
 import React, { useRef, useState, useMemo } from "react";
 import { FloorPlan, Room } from "@/lib/types";
+import { Plus, Trash2, Grid3X3 } from "lucide-react";
 
 interface FloorPlanEditorProps {
   floorPlan: FloorPlan;
@@ -10,6 +11,7 @@ interface FloorPlanEditorProps {
 
 const SCALE = 60;
 const PADDING = 40;
+const SNAP = 0.5;
 
 const roomColors: Record<string, string> = {
   living: "#dbeafe",
@@ -20,6 +22,14 @@ const roomColors: Record<string, string> = {
   hallway: "#f3f4f6",
   room: "#f3f4f6",
 };
+
+function snap(value: number, step: number) {
+  return Math.round(value / step) * step;
+}
+
+function findNextId(rooms: Room[]) {
+  return rooms.length > 0 ? Math.max(...rooms.map((r) => r.id)) + 1 : 1;
+}
 
 export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditorProps) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -38,6 +48,10 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
 
   const toSvgX = (x: number) => PADDING + x * SCALE;
   const toSvgY = (y: number) => bounds.height - (PADDING + y * SCALE);
+
+  const handleCanvasClick = () => {
+    setSelectedRoom(null);
+  };
 
   const handleMouseDown = (e: React.MouseEvent, room: Room) => {
     e.stopPropagation();
@@ -63,8 +77,11 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
     pt.y = e.clientY;
     const cursorPt = pt.matrixTransform(svg.getScreenCTM()?.inverse());
 
-    const newX = Math.round(((cursorPt.x - dragOffset.x - PADDING) / SCALE) * 2) / 2;
-    const newY = Math.round(((bounds.height - cursorPt.y + dragOffset.y - PADDING) / SCALE) * 2) / 2;
+    const rawX = (cursorPt.x - dragOffset.x - PADDING) / SCALE;
+    const rawY = (bounds.height - cursorPt.y + dragOffset.y - PADDING) / SCALE;
+
+    const newX = Math.max(0, snap(rawX, SNAP));
+    const newY = Math.max(0, snap(rawY, SNAP));
 
     onChange({
       ...floorPlan,
@@ -77,10 +94,43 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
   };
 
   const updateRoom = (id: number, field: keyof Room, value: any) => {
+    let cleanValue = value;
+    if (field === "width" || field === "height") {
+      cleanValue = Math.max(0.5, snap(parseFloat(value) || 1, SNAP));
+    }
     onChange({
       ...floorPlan,
-      rooms: floorPlan.rooms.map((r) => (r.id === id ? { ...r, [field]: value } : r)),
+      rooms: floorPlan.rooms.map((r) => (r.id === id ? { ...r, [field]: cleanValue } : r)),
     });
+  };
+
+  const addRoom = () => {
+    const id = findNextId(floorPlan.rooms);
+    const newRoom: Room = {
+      id,
+      name: `Комната ${id}`,
+      type: "room",
+      x: 0,
+      y: 0,
+      width: 3,
+      height: 3,
+    };
+
+    // Try to place the new room next to existing ones without overlap
+    const placed = tryPlaceRoom(floorPlan.rooms, newRoom);
+    onChange({
+      ...floorPlan,
+      rooms: [...floorPlan.rooms, placed],
+    });
+    setSelectedRoom(placed.id);
+  };
+
+  const deleteRoom = (id: number) => {
+    onChange({
+      ...floorPlan,
+      rooms: floorPlan.rooms.filter((r) => r.id !== id),
+    });
+    if (selectedRoom === id) setSelectedRoom(null);
   };
 
   const selected = floorPlan.rooms.find((r) => r.id === selectedRoom);
@@ -89,7 +139,28 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between mb-3">
         <h2 className="font-semibold text-lg">2D-планировка</h2>
-        <p className="text-sm text-slate-500">Перетаскивайте комнаты. Кликните для редактирования размеров.</p>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 text-xs text-slate-500 mr-2">
+            <Grid3X3 className="h-3.5 w-3.5" />
+            <span>Привязка {SNAP} м</span>
+          </div>
+          {selected && (
+            <button
+              onClick={() => deleteRoom(selected.id)}
+              className="flex items-center gap-1.5 text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg text-sm border border-red-200 transition"
+            >
+              <Trash2 className="h-4 w-4" />
+              Удалить
+            </button>
+          )}
+          <button
+            onClick={addRoom}
+            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-sm transition"
+          >
+            <Plus className="h-4 w-4" />
+            Добавить комнату
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 bg-white rounded-xl shadow overflow-auto border">
@@ -100,6 +171,7 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
+          onClick={handleCanvasClick}
           className="cursor-crosshair block"
         >
           <defs>
@@ -132,7 +204,7 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
                 fill={roomColors[room.type] || roomColors.room}
                 stroke={selectedRoom === room.id ? "#2563eb" : "#64748b"}
                 strokeWidth={selectedRoom === room.id ? 3 : 1}
-                className="hover:stroke-blue-500"
+                className="hover:stroke-blue-500 transition-colors"
                 style={{ cursor: "move" }}
               />
               <text
@@ -140,7 +212,7 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
                 y={toSvgY(room.y) - (room.height * SCALE) / 2}
                 textAnchor="middle"
                 dominantBaseline="middle"
-                className="text-xs fill-slate-700 pointer-events-none select-none"
+                className="text-xs fill-slate-700 pointer-events-none select-none font-medium"
               >
                 {room.name}
               </text>
@@ -196,9 +268,10 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
             <label className="text-xs text-slate-500">Ширина (м)</label>
             <input
               type="number"
-              step={0.1}
+              step={SNAP}
+              min={0.5}
               value={selected.width}
-              onChange={(e) => updateRoom(selected.id, "width", parseFloat(e.target.value))}
+              onChange={(e) => updateRoom(selected.id, "width", e.target.value)}
               className="w-full border rounded px-2 py-1 text-sm"
             />
           </div>
@@ -206,9 +279,10 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
             <label className="text-xs text-slate-500">Глубина (м)</label>
             <input
               type="number"
-              step={0.1}
+              step={SNAP}
+              min={0.5}
               value={selected.height}
-              onChange={(e) => updateRoom(selected.id, "height", parseFloat(e.target.value))}
+              onChange={(e) => updateRoom(selected.id, "height", e.target.value)}
               className="w-full border rounded px-2 py-1 text-sm"
             />
           </div>
@@ -232,4 +306,28 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
       )}
     </div>
   );
+}
+
+function tryPlaceRoom(existingRooms: Room[], newRoom: Room): Room {
+  const candidates: Array<{ x: number; y: number }> = [{ x: 0, y: 0 }];
+
+  existingRooms.forEach((room) => {
+    candidates.push({ x: room.x + room.width + 0.2, y: room.y });
+    candidates.push({ x: room.x, y: room.y + room.height + 0.2 });
+  });
+
+  for (const pos of candidates) {
+    const candidate = { ...newRoom, x: snap(pos.x, SNAP), y: snap(pos.y, SNAP) };
+    if (!existingRooms.some((r) => rectanglesOverlap(r, candidate))) {
+      return candidate;
+    }
+  }
+
+  // Fallback: place far to the right
+  const maxX = existingRooms.reduce((max, r) => Math.max(max, r.x + r.width), 0);
+  return { ...newRoom, x: snap(maxX + 0.5, SNAP), y: 0 };
+}
+
+function rectanglesOverlap(a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
 }
