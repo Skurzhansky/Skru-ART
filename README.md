@@ -444,50 +444,90 @@ OPENAI_API_KEY=sk-your-real-key
 SECRET_KEY=your-strong-secret
 ```
 
-### Пошаговый деплой (Vercel + Render)
+### Пошаговый деплой на VPS (рекомендуется)
 
-#### Шаг 1: Backend на Render
+Для полного соответствия законам РФ и независимости от зарубежных хостингов рекомендуется VPS у российского провайдера.
 
-1. Зайди на [render.com](https://render.com) → **New** → **Web Service**
-2. Подключи GitHub репозиторий `Skurzhansky/Skru-ART`
-3. Настройки:
-   - **Name:** `house-designer-api`
-   - **Runtime:** `Docker`
-   - **Dockerfile path:** `./backend/Dockerfile`
-   - **Docker context:** `./backend`
-4. Создай PostgreSQL: **New** → **PostgreSQL** → имя `house-designer-db`
-5. В Web Service добавь переменные:
-   - `DATABASE_URL` → выбери из созданной БД
-   - `OPENAI_API_KEY` → твой ключ
-   - `SECRET_KEY` → любой сложный ключ
-   - `CORS_ORIGINS` → `https://your-project.vercel.app` (URL frontend после шага 2)
-6. Деплой — получишь URL вида `https://house-designer-api.onrender.com`
+#### Вариант A: Timeweb / Selectel / Reg.ru (простой VPS)
 
-#### Шаг 2: Frontend на Vercel
+1. Арендуй VPS/VDS (минимум 2 CPU, 4 GB RAM) с Ubuntu 22.04
+2. Установи Docker и Docker Compose:
 
-1. Зайди на [vercel.com](https://vercel.com) → **Add New** → **Project**
-2. Импортируй `Skurzhansky/Skru-ART`
-3. Настройки:
-   - **Framework:** Next.js
-   - **Root Directory:** `frontend`
-4. В **Environment Variables** добавь:
-   - `NEXT_PUBLIC_API_URL` = `https://house-designer-api.onrender.com`
-5. Деплой — получишь URL вида `https://skru-art.vercel.app`
+```bash
+ssh root@твой-сервер
+apt update && apt install -y docker.io docker-compose-plugin
+```
 
-#### Шаг 3: Связка
+3. Скопируй проект на сервер:
 
-1. В Render измени `CORS_ORIGINS` на URL твоего Vercel-приложения
-2. Перезапусти backend (Manual Deploy → Deploy latest)
+```bash
+git clone https://github.com/Skurzhansky/Skru-ART.git
+cd Skru-ART
+```
+
+4. Создай `.env` в корне:
+
+```env
+OPENAI_API_KEY=sk-ваш-ключ
+SECRET_KEY=ваш-секретный-ключ
+```
+
+5. Запусти:
+
+```bash
+docker compose up -d
+```
+
+6. Открой `http://ip-вашего-сервера` — сайт доступен по IP-адресу
+
+#### Вариант B: Yandex Cloud (управляемые сервисы)
+
+1. **Backend:** Yandex Cloud Container Instances или Compute Cloud + Docker
+2. **Frontend:** Object Storage + CDN для статики, или Compute Cloud
+3. **База:** Managed PostgreSQL в Yandex Cloud
+4. **Домен:** подключи домен через DNS
+
+#### Вариант C: Локальный сервер / домашний сервер
+
+Если есть статический IP или возможность пробросить порты:
+
+```bash
+docker compose up -d
+```
+
+И открой порт 80/443 наружу.
 
 ---
 
-### Альтернатива: всё на Railway
+### Настройка HTTPS (для VPS)
+
+Установи Nginx и Certbot:
 
 ```bash
-# Railway подключает GitHub и автоматически определяет Dockerfile
-# Frontend: отдельный сервис с root directory frontend/
-# Backend: Dockerfile + PostgreSQL plugin
+apt install -y nginx certbot python3-certbot-nginx
+certbot --nginx -d твой-домен.ru
 ```
+
+Пример `nginx.conf` для проксирования:
+
+```nginx
+server {
+    listen 80;
+    server_name твой-домен.ru;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_set_header Host $host;
+    }
+
+    location /api {
+        proxy_pass http://localhost:8000;
+        proxy_set_header Host $host;
+    }
+}
+```
+
+Или используй `CORS_ORIGINS` в backend для разрешения домена frontend.
 
 ---
 
@@ -530,27 +570,27 @@ npm run lint
 
 ### Backend
 
-Подходит любой хостинг с поддержкой Python + ASGI (Render, Railway, Fly.io, AWS EC2).
+Подходит любой хостинг с поддержкой Docker или Python + ASGI:
+- **VPS в РФ:** Timeweb, Selectel, Reg.ru, VDSina
+- **Yandex Cloud:** Compute Cloud, Container Instances
+- **VK Cloud:** Cloud Containers
 
-Пример для Render:
+Пример для VPS (Ubuntu + Docker):
 
-- Build command: `pip install -r requirements.txt`
-- Start command: `uvicorn main:app --host 0.0.0.0 --port 10000`
-- Добавить переменные окружения из `.env`.
-- Для продакшена рекомендуется PostgreSQL вместо SQLite.
+- Build command: `docker build -f backend/Dockerfile -t house-backend ./backend`
+- Start command: `docker run -p 8000:8000 -e DATABASE_URL=... house-backend`
+- Или через `docker compose up -d` из корня проекта
 
 ### Frontend
 
-Оптимально деплоить на Vercel:
-
-- Подключить репозиторий GitHub.
-- Root directory: `frontend`
-- Добавить `NEXT_PUBLIC_API_URL=<backend-url>`.
-- Framework preset: Next.js.
+Для соответствия законам РФ деплоить на:
+- **VPS в РФ:** Next.js production build (`npm run build && npm start`)
+- **Yandex Cloud Object Storage + CDN:** для статического экспорта (если адаптировать под static export)
+- **Selectel:** хостинг с Node.js
 
 ### CORS
 
-При деплое обновить `origins` в `backend/main.py`, добавив домен frontend.
+При деплое установи `CORS_ORIGINS` в backend с доменом frontend.
 
 ---
 
