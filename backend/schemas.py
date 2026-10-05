@@ -101,3 +101,8 @@ class EnergyRequest(BaseModel):
     climate_zone: Optional[str] = None
     heating_type: Optional[str] = None
     region_factor: Optional[float] = 1.0
+
+
+class ExportRequest(EnergyRequest):
+    title: str = "Проект дома"
+    description: Optional[str] = None

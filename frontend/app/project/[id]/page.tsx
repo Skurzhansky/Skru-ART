@@ -2,13 +2,13 @@
 
 import React, { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { getProject, updateProject } from "@/lib/api";
+import { getProject, updateProject, exportPdf, exportSvg, exportDxf, exportReport } from "@/lib/api";
 import { Project, FloorPlan, CostEstimate } from "@/lib/types";
 import FloorPlanEditor from "@/components/FloorPlanEditor";
 import House3DViewer from "@/components/House3DViewer";
 import AIChatPanel from "@/components/AIChatPanel";
 import CostEstimatePanel from "@/components/CostEstimatePanel";
-import { ArrowLeft, Save, Loader2, Download } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Download, ChevronDown } from "lucide-react";
 import Link from "next/link";
 
 const defaultPlan: FloorPlan = {
@@ -66,6 +66,18 @@ export default function ProjectPage() {
     }
   };
 
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleExport = () => {
     const data = {
       project,
@@ -74,12 +86,73 @@ export default function ProjectPage() {
       exportedAt: new Date().toISOString(),
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${project?.title || "project"}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, `${project?.title || "project"}.json`);
+  };
+
+  const handleExportPdf = async () => {
+    if (!project) return;
+    setExporting(true);
+    try {
+      const blob = await exportPdf({
+        title: project.title,
+        description: project.description,
+        floorPlan,
+        parameters: project.parameters,
+      });
+      downloadBlob(blob, `${project.title}.pdf`);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || "Ошибка экспорта PDF");
+    } finally {
+      setExporting(false);
+      setExportMenuOpen(false);
+    }
+  };
+
+  const handleExportSvg = async () => {
+    if (!project) return;
+    setExporting(true);
+    try {
+      const blob = await exportSvg({ title: project.title, floorPlan });
+      downloadBlob(blob, `${project.title}.svg`);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || "Ошибка экспорта SVG");
+    } finally {
+      setExporting(false);
+      setExportMenuOpen(false);
+    }
+  };
+
+  const handleExportDxf = async () => {
+    if (!project) return;
+    setExporting(true);
+    try {
+      const blob = await exportDxf({ title: project.title, floorPlan });
+      downloadBlob(blob, `${project.title}.dxf`);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || "Ошибка экспорта DXF");
+    } finally {
+      setExporting(false);
+      setExportMenuOpen(false);
+    }
+  };
+
+  const handleExportReport = async () => {
+    if (!project) return;
+    setExporting(true);
+    try {
+      const blob = await exportReport({
+        title: project.title,
+        description: project.description,
+        floorPlan,
+        parameters: project.parameters,
+      });
+      downloadBlob(blob, `${project.title}-report.txt`);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || "Ошибка экспорта отчёта");
+    } finally {
+      setExporting(false);
+      setExportMenuOpen(false);
+    }
   };
 
   if (error && !project) {
@@ -126,13 +199,54 @@ export default function ProjectPage() {
               3D вид
             </button>
           </div>
-          <button
-            onClick={handleExport}
-            className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm font-medium"
-          >
-            <Download className="h-4 w-4" />
-            Экспорт JSON
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setExportMenuOpen(!exportMenuOpen)}
+              className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm font-medium"
+            >
+              <Download className="h-4 w-4" />
+              Экспорт
+              <ChevronDown className="h-4 w-4" />
+            </button>
+            {exportMenuOpen && (
+              <div className="absolute right-0 mt-1 w-48 bg-slate-800 rounded-lg shadow-lg border border-slate-700 z-10">
+                <button
+                  onClick={handleExport}
+                  className="block w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-700 first:rounded-t-lg"
+                >
+                  JSON
+                </button>
+                <button
+                  onClick={handleExportPdf}
+                  disabled={exporting}
+                  className="block w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50"
+                >
+                  PDF
+                </button>
+                <button
+                  onClick={handleExportSvg}
+                  disabled={exporting}
+                  className="block w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50"
+                >
+                  SVG
+                </button>
+                <button
+                  onClick={handleExportDxf}
+                  disabled={exporting}
+                  className="block w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50"
+                >
+                  DXF
+                </button>
+                <button
+                  onClick={handleExportReport}
+                  disabled={exporting}
+                  className="block w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-700 last:rounded-b-lg disabled:opacity-50"
+                >
+                  Отчёт (TXT)
+                </button>
+              </div>
+            )}
+          </div>
           <button
             onClick={handleSave}
             disabled={saving}

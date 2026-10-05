@@ -2,7 +2,7 @@ import os
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import bcrypt
@@ -23,6 +23,7 @@ from schemas import (
     EstimateRequest,
     MaterialsRequest,
     EnergyRequest,
+    ExportRequest,
 )
 from ai_service import (
     chat_with_ai,
@@ -33,6 +34,7 @@ from ai_service import (
 )
 from floor_plan_generator import generate_rectangular_plan
 from cost_estimator import estimate_costs
+from export_service import generate_plan_pdf, generate_plan_dxf, generate_plan_svg, generate_project_report
 
 Base.metadata.create_all(bind=engine)
 
@@ -278,6 +280,70 @@ def energy(payload: EnergyRequest):
 @app.post("/ai/estimate")
 def estimate(payload: EstimateRequest):
     return estimate_costs(payload.floor_plan, region_factor=payload.region_factor or 1.0)
+
+
+def _safe_filename(name: str) -> str:
+    import unicodedata
+    import re
+    normalized = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
+    normalized = re.sub(r"[^\w\-.]", "_", normalized)
+    return normalized or "project"
+
+
+@app.post("/export/pdf")
+def export_pdf(payload: ExportRequest):
+    pdf_bytes = generate_plan_pdf(
+        project_title=payload.title,
+        project_description=payload.description,
+        floor_plan=payload.floor_plan,
+        estimate=estimate_costs(payload.floor_plan, region_factor=payload.region_factor or 1.0),
+        parameters=payload.parameters,
+    )
+    filename = _safe_filename(payload.title)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}.pdf"'},
+    )
+
+
+@app.post("/export/svg")
+def export_svg(payload: ExportRequest):
+    svg_text = generate_plan_svg(payload.floor_plan)
+    filename = _safe_filename(payload.title)
+    return Response(
+        content=svg_text,
+        media_type="image/svg+xml",
+        headers={"Content-Disposition": f'attachment; filename="{filename}.svg"'},
+    )
+
+
+@app.post("/export/dxf")
+def export_dxf(payload: ExportRequest):
+    dxf_text = generate_plan_dxf(payload.floor_plan)
+    filename = _safe_filename(payload.title)
+    return Response(
+        content=dxf_text,
+        media_type="application/dxf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}.dxf"'},
+    )
+
+
+@app.post("/export/report")
+def export_report(payload: ExportRequest):
+    report_text = generate_project_report(
+        project_title=payload.title,
+        project_description=payload.description,
+        floor_plan=payload.floor_plan,
+        estimate=estimate_costs(payload.floor_plan, region_factor=payload.region_factor or 1.0),
+        parameters=payload.parameters,
+    )
+    filename = _safe_filename(payload.title)
+    return Response(
+        content=report_text,
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}-report.txt"'},
+    )
 
 
 if __name__ == "__main__":

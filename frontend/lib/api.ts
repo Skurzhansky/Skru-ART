@@ -134,3 +134,59 @@ export async function estimateCost(floorPlan: FloorPlan, regionFactor = 1.0) {
   return response.data;
 }
 
+export async function exportPdf(payload: {
+  title: string;
+  description?: string;
+  floorPlan: FloorPlan;
+  parameters?: Record<string, unknown>;
+  regionFactor?: number;
+}) {
+  const response = await api.post("/export/pdf", {
+    title: payload.title,
+    description: payload.description,
+    floor_plan: payload.floorPlan,
+    parameters: payload.parameters,
+    region_factor: payload.regionFactor ?? 1.0,
+  }, { responseType: "blob" });
+  return response.data;
+}
+
+export async function exportSvg(payload: {
+  title: string;
+  floorPlan: FloorPlan;
+}) {
+  const response = await api.post("/export/svg", {
+    title: payload.title,
+    floor_plan: payload.floorPlan,
+  }, { responseType: "blob" });
+  return response.data;
+}
+
+export async function exportDxf(payload: {
+  title: string;
+  floorPlan: FloorPlan;
+}) {
+  const response = await api.post("/export/dxf", {
+    title: payload.title,
+    floor_plan: payload.floorPlan,
+  }, { responseType: "blob" });
+  return response.data;
+}
+
+export async function exportReport(payload: {
+  title: string;
+  description?: string;
+  floorPlan: FloorPlan;
+  parameters?: Record<string, unknown>;
+  regionFactor?: number;
+}) {
+  const response = await api.post("/export/report", {
+    title: payload.title,
+    description: payload.description,
+    floor_plan: payload.floorPlan,
+    parameters: payload.parameters,
+    region_factor: payload.regionFactor ?? 1.0,
+  }, { responseType: "blob" });
+  return response.data;
+}
+
