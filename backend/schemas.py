@@ -1,6 +1,7 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, validator, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+import re
 
 
 class UserBase(BaseModel):
@@ -9,7 +10,13 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str
+    password: str = Field(..., min_length=8)
+
+    @validator("password")
+    def password_strength(cls, v):
+        if not re.search(r"[A-Za-z]", v) or not re.search(r"\d", v):
+            raise ValueError("Пароль должен содержать буквы и цифры")
+        return v
 
 
 class UserRead(UserBase):

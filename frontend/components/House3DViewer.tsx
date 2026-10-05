@@ -1,8 +1,8 @@
 "use client";
 
-import React, { Suspense } from "react";
+import React, { Suspense, useMemo } from "react";
 import { Canvas } from "@react-three/fiber";
-import { OrbitControls, Box } from "@react-three/drei";
+import { OrbitControls, Box, Cone, Cylinder } from "@react-three/drei";
 import { FloorPlan } from "@/lib/types";
 
 interface House3DViewerProps {
@@ -34,8 +34,10 @@ function Walls({ walls }: { walls: FloorPlan["walls"] }) {
             args={[length, 2.8, w.thickness]}
             position={[w.x1 + dx / 2, 1.4, w.y1 + dy / 2]}
             rotation={[0, -angle, 0]}
+            castShadow
+            receiveShadow
           >
-            <meshStandardMaterial color="#64748b" />
+            <meshStandardMaterial color="#94a3b8" />
           </Box>
         );
       })}
@@ -49,13 +51,79 @@ function Rooms({ rooms }: { rooms: FloorPlan["rooms"] }) {
       {rooms.map((room) => (
         <Box
           key={room.id}
-          args={[room.width, 0.1, room.height]}
-          position={[room.x + room.width / 2, 0.05, room.y + room.height / 2]}
+          args={[room.width, 0.15, room.height]}
+          position={[room.x + room.width / 2, 0.075, room.y + room.height / 2]}
+          receiveShadow
         >
           <meshStandardMaterial color={roomColors[room.type] || roomColors.room} />
         </Box>
       ))}
     </>
+  );
+}
+
+function Roof({ floorPlan }: { floorPlan: FloorPlan }) {
+  const { minX, maxX, minY, maxY } = useMemo(() => {
+    const xs = floorPlan.rooms.map((r) => r.x);
+    const ys = floorPlan.rooms.map((r) => r.y);
+    const ws = floorPlan.rooms.map((r) => r.x + r.width);
+    const hs = floorPlan.rooms.map((r) => r.y + r.height);
+    return {
+      minX: Math.min(...xs, 0),
+      maxX: Math.max(...ws, 1),
+      minY: Math.min(...ys, 0),
+      maxY: Math.max(...hs, 1),
+    };
+  }, [floorPlan]);
+
+  const width = maxX - minX;
+  const depth = maxY - minY;
+  const centerX = (minX + maxX) / 2;
+  const centerZ = (minY + maxY) / 2;
+  const roofHeight = Math.min(width, depth) * 0.35;
+  const roofWidth = Math.sqrt(width * width + depth * depth);
+
+  return (
+    <group position={[centerX, 2.8, centerZ]}>
+      {/* Двускатная крыша */}
+      <Box
+        args={[roofWidth, 0.1, roofHeight * 2]}
+        rotation={[0, Math.PI / 4, 0]}
+        castShadow
+      >
+        <meshStandardMaterial color="#7f1d1d" />
+      </Box>
+    </group>
+  );
+}
+
+function Ground({ floorPlan }: { floorPlan: FloorPlan }) {
+  const { minX, maxX, minY, maxY } = useMemo(() => {
+    const xs = floorPlan.rooms.map((r) => r.x);
+    const ys = floorPlan.rooms.map((r) => r.y);
+    const ws = floorPlan.rooms.map((r) => r.x + r.width);
+    const hs = floorPlan.rooms.map((r) => r.y + r.height);
+    return {
+      minX: Math.min(...xs, -2) - 2,
+      maxX: Math.max(...ws, 2) + 2,
+      minY: Math.min(...ys, -2) - 2,
+      maxY: Math.max(...hs, 2) + 2,
+    };
+  }, [floorPlan]);
+
+  const width = maxX - minX;
+  const depth = maxY - minY;
+  const centerX = (minX + maxX) / 2;
+  const centerZ = (minY + maxY) / 2;
+
+  return (
+    <Box
+      args={[width, 0.1, depth]}
+      position={[centerX, -0.05, centerZ]}
+      receiveShadow
+    >
+      <meshStandardMaterial color="#86efac" />
+    </Box>
   );
 }
 
@@ -65,10 +133,19 @@ function Scene({ floorPlan }: { floorPlan: FloorPlan }) {
 
   return (
     <>
-      <ambientLight intensity={0.7} />
-      <directionalLight position={[10, 20, 10]} intensity={1.2} castShadow />
+      <ambientLight intensity={0.5} />
+      <directionalLight
+        position={[10, 20, 10]}
+        intensity={1.5}
+        castShadow
+        shadow-mapSize-width={2048}
+        shadow-mapSize-height={2048}
+      />
+      <directionalLight position={[-5, 10, -5]} intensity={0.3} />
+      <Ground floorPlan={floorPlan} />
       <Rooms rooms={floorPlan.rooms} />
       <Walls walls={floorPlan.walls} />
+      <Roof floorPlan={floorPlan} />
       <OrbitControls target={[centerX, 0, centerZ]} />
     </>
   );
@@ -77,15 +154,28 @@ function Scene({ floorPlan }: { floorPlan: FloorPlan }) {
 export default function House3DViewer({ floorPlan }: House3DViewerProps) {
   return (
     <div className="flex flex-col h-full">
-      <h2 className="font-semibold text-lg mb-3">3D-визуализация</h2>
-      <div className="flex-1 bg-white rounded-xl shadow border overflow-hidden min-h-[400px]">
-        <Canvas camera={{ position: [15, 15, 15], fov: 45 }} className="w-full h-full">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-semibold text-lg">3D-визуализация</h2>
+        <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">Beta</span>
+      </div>
+      <div className="flex-1 bg-gradient-to-b from-sky-100 to-sky-50 rounded-xl shadow border overflow-hidden min-h-[400px]">
+        <Canvas
+          camera={{ position: [15, 12, 15], fov: 45 }}
+          shadows
+          className="w-full h-full"
+        >
           <Suspense fallback={null}>
             <Scene floorPlan={floorPlan} />
           </Suspense>
         </Canvas>
       </div>
-      <p className="text-xs text-slate-500 mt-2">Мышью: вращение — зажать ЛКМ, приближение — скролл.</p>
+      <div className="flex items-center justify-between mt-2">
+        <p className="text-xs text-slate-500">Мышью: вращение — зажать ЛКМ, приближение — скролл.</p>
+        <div className="flex gap-4 text-xs text-slate-500">
+          <span>🏠 Автоматическая крыша</span>
+          <span>☀️ Тени</span>
+        </div>
+      </div>
     </div>
   );
 }

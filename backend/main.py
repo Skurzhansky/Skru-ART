@@ -4,10 +4,13 @@ import shutil
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from fastapi import FastAPI, Depends, HTTPException, status, Response, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, status, Response, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 import bcrypt
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
@@ -46,6 +49,9 @@ UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = FastAPI(title="AI House Designer API", version="0.1.0")
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 default_origins = [
     "http://localhost:3000",
@@ -128,7 +134,8 @@ def health():
 
 
 @app.post("/auth/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
-def register(user_in: UserCreate, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.email == user_in.email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -144,7 +151,8 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
 
 
 @app.post("/auth/login", response_model=Token)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == form_data.username).first()
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
@@ -314,8 +322,73 @@ def get_public_project(public_token: str, db: Session = Depends(get_db)):
     return project
 
 
+@app.post("/projects/{project_id}/versions")
+def save_version(
+    project_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    project = db.query(Project).filter(Project.id == project_id, Project.owner_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not project.floor_plan:
+        raise HTTPException(status_code=400, detail="No floor plan to save")
+
+    history = list(project.floor_plan_history or [])
+    history.append({
+        "timestamp": datetime.utcnow().isoformat(),
+        "floor_plan": project.floor_plan,
+    })
+    # Keep last 50 versions
+    if len(history) > 50:
+        history = history[-50:]
+    project.floor_plan_history = history
+    db.commit()
+    db.refresh(project)
+    return {"versions_count": len(history)}
+
+
+@app.get("/projects/{project_id}/versions")
+def list_versions(
+    project_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    project = db.query(Project).filter(Project.id == project_id, Project.owner_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return {
+        "versions": [
+            {"index": i, "timestamp": v["timestamp"]}
+            for i, v in enumerate(project.floor_plan_history or [])
+        ]
+    }
+
+
+@app.post("/projects/{project_id}/versions/{version_index}/restore")
+def restore_version(
+    project_id: int,
+    version_index: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    project = db.query(Project).filter(Project.id == project_id, Project.owner_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    history = project.floor_plan_history or []
+    if version_index < 0 or version_index >= len(history):
+        raise HTTPException(status_code=404, detail="Version not found")
+
+    project.floor_plan = history[version_index]["floor_plan"]
+    db.commit()
+    db.refresh(project)
+    return project
+
+
 @app.post("/ai/chat")
-def chat(payload: ChatRequest):
+@limiter.limit("20/minute")
+def chat(request: Request, payload: ChatRequest):
     answer = chat_with_ai(
         messages=[m.model_dump() for m in payload.messages],
         project_context=payload.project_context,
@@ -324,7 +397,8 @@ def chat(payload: ChatRequest):
 
 
 @app.post("/ai/generate-plan")
-def generate_plan(payload: GeneratePlanRequest):
+@limiter.limit("10/minute")
+def generate_plan(request: Request, payload: GeneratePlanRequest):
     plan = generate_floor_plan_from_prompt(
         prompt=payload.prompt,
         area=payload.area,
@@ -343,7 +417,8 @@ def generate_plan(payload: GeneratePlanRequest):
 
 
 @app.post("/ai/generate-plan-variants")
-def generate_plan_variants(payload: GeneratePlanRequest):
+@limiter.limit("10/minute")
+def generate_plan_variants(request: Request, payload: GeneratePlanRequest):
     variants = generate_floor_plan_variants(
         prompt=payload.prompt,
         area=payload.area,
@@ -356,7 +431,8 @@ def generate_plan_variants(payload: GeneratePlanRequest):
 
 
 @app.post("/ai/materials")
-def materials(payload: MaterialsRequest):
+@limiter.limit("10/minute")
+def materials(request: Request, payload: MaterialsRequest):
     return recommend_materials(
         floor_plan=payload.floor_plan,
         parameters=payload.parameters,
@@ -367,7 +443,8 @@ def materials(payload: MaterialsRequest):
 
 
 @app.post("/ai/energy")
-def energy(payload: EnergyRequest):
+@limiter.limit("10/minute")
+def energy(request: Request, payload: EnergyRequest):
     return assess_energy_efficiency(
         floor_plan=payload.floor_plan,
         parameters=payload.parameters,

@@ -2,13 +2,13 @@
 
 import React, { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { getProject, updateProject, exportPdf, exportSvg, exportDxf, exportReport, uploadSitePhoto, shareProject, unshareProject } from "@/lib/api";
+import { getProject, updateProject, exportPdf, exportSvg, exportDxf, exportReport, uploadSitePhoto, shareProject, unshareProject, saveProjectVersion, listProjectVersions, restoreProjectVersion } from "@/lib/api";
 import { Project, FloorPlan, CostEstimate } from "@/lib/types";
 import FloorPlanEditor from "@/components/FloorPlanEditor";
 import House3DViewer from "@/components/House3DViewer";
 import AIChatPanel from "@/components/AIChatPanel";
 import CostEstimatePanel from "@/components/CostEstimatePanel";
-import { ArrowLeft, Save, Loader2, Download, ChevronDown, ImagePlus, Share2, Link as LinkIcon } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Download, ChevronDown, ImagePlus, Share2, Link as LinkIcon, History } from "lucide-react";
 import Link from "next/link";
 
 const defaultPlan: FloorPlan = {
@@ -68,6 +68,8 @@ export default function ProjectPage() {
 
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [versionsMenuOpen, setVersionsMenuOpen] = useState(false);
+  const [versions, setVersions] = useState<{ index: number; timestamp: string }[]>([]);
 
   const downloadBlob = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob);
@@ -188,6 +190,40 @@ export default function ProjectPage() {
     }
   };
 
+  const handleSaveVersion = async () => {
+    if (!project) return;
+    try {
+      await saveProjectVersion(project.id);
+      const data = await listProjectVersions(project.id);
+      setVersions(data.versions || []);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || "Ошибка сохранения версии");
+    }
+  };
+
+  const handleRestoreVersion = async (index: number) => {
+    if (!project) return;
+    if (!confirm("Восстановить эту версию? Текущие изменения будут сохранены в истории.")) return;
+    try {
+      const updated = await restoreProjectVersion(project.id, index);
+      setProject(updated);
+      if (updated.floor_plan) setFloorPlan(updated.floor_plan);
+      setVersionsMenuOpen(false);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || "Ошибка восстановления версии");
+    }
+  };
+
+  const loadVersions = async () => {
+    if (!project) return;
+    try {
+      const data = await listProjectVersions(project.id);
+      setVersions(data.versions || []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   if (error && !project) {
     return (
       <div className="p-8 text-red-600">
@@ -245,6 +281,45 @@ export default function ProjectPage() {
             {project.is_public ? <LinkIcon className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
             {project.is_public ? "Скопировать ссылку" : "Поделиться"}
           </button>
+          <div className="relative">
+            <button
+              onClick={() => {
+                setVersionsMenuOpen(!versionsMenuOpen);
+                if (!versionsMenuOpen) loadVersions();
+              }}
+              className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm font-medium"
+            >
+              <History className="h-4 w-4" />
+              Версии
+            </button>
+            {versionsMenuOpen && (
+              <div className="absolute right-0 mt-1 w-64 bg-slate-800 rounded-lg shadow-lg border border-slate-700 z-10">
+                <div className="p-2">
+                  <button
+                    onClick={handleSaveVersion}
+                    className="w-full text-left px-3 py-2 text-sm text-blue-400 hover:bg-slate-700 rounded"
+                  >
+                    + Сохранить текущую версию
+                  </button>
+                  <div className="border-t border-slate-700 mt-2 pt-2 max-h-48 overflow-y-auto">
+                    {versions.length === 0 ? (
+                      <p className="text-xs text-slate-400 px-3 py-2">Нет сохранённых версий</p>
+                    ) : (
+                      versions.map((v) => (
+                        <button
+                          key={v.index}
+                          onClick={() => handleRestoreVersion(v.index)}
+                          className="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-700 rounded"
+                        >
+                          Версия {v.index + 1} — {new Date(v.timestamp).toLocaleString("ru-RU")}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
           <div className="relative">
             <button
               onClick={() => setExportMenuOpen(!exportMenuOpen)}

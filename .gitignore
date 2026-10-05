@@ -27,3 +27,4 @@ frontend/dist/
 Thumbs.db
 backend/uploads/*
 !backend/uploads/.gitkeep
+backend/backups/

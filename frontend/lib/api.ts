@@ -214,3 +214,18 @@ export async function getPublicProject(token: string) {
   return response.data;
 }
 
+export async function saveProjectVersion(projectId: number) {
+  const response = await api.post(`/projects/${projectId}/versions`);
+  return response.data;
+}
+
+export async function listProjectVersions(projectId: number) {
+  const response = await api.get(`/projects/${projectId}/versions`);
+  return response.data;
+}
+
+export async function restoreProjectVersion(projectId: number, versionIndex: number) {
+  const response = await api.post(`/projects/${projectId}/versions/${versionIndex}/restore`);
+  return response.data;
+}
+
