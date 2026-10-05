@@ -1,0 +1,88 @@
+import axios from "axios";
+import type { FloorPlan } from "./types";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+const api = axios.create({
+  baseURL: API_URL,
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
+
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem("token");
+  if (token && config.headers) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+export default api;
+
+export async function login(email: string, password: string) {
+  const formData = new URLSearchParams();
+  formData.append("username", email);
+  formData.append("password", password);
+  const response = await api.post("/auth/login", formData.toString(), {
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+  });
+  return response.data;
+}
+
+export async function register(email: string, password: string, fullName?: string) {
+  const response = await api.post("/auth/register", { email, password, full_name: fullName });
+  return response.data;
+}
+
+export async function getMe() {
+  const response = await api.get("/auth/me");
+  return response.data;
+}
+
+export async function listProjects() {
+  const response = await api.get("/projects");
+  return response.data;
+}
+
+export async function getProject(id: number) {
+  const response = await api.get(`/projects/${id}`);
+  return response.data;
+}
+
+export async function createProject(project: { title: string; description?: string; parameters?: Record<string, unknown> }) {
+  const response = await api.post("/projects", project);
+  return response.data;
+}
+
+export async function updateProject(id: number, updates: Record<string, unknown>) {
+  const response = await api.patch(`/projects/${id}`, updates);
+  return response.data;
+}
+
+export async function deleteProject(id: number) {
+  await api.delete(`/projects/${id}`);
+}
+
+export async function sendChat(messages: { role: string; content: string }[], context?: Record<string, unknown>) {
+  const response = await api.post("/ai/chat", { messages, project_context: context });
+  return response.data;
+}
+
+export async function generatePlan(payload: {
+  prompt: string;
+  area?: number;
+  floors?: number;
+  budget?: number;
+  style?: string;
+  rooms?: string[];
+}) {
+  const response = await api.post("/ai/generate-plan", payload);
+  return response.data;
+}
+
+export async function estimateCost(floorPlan: FloorPlan, regionFactor = 1.0) {
+  const response = await api.post("/ai/estimate", { floor_plan: floorPlan, region_factor: regionFactor });
+  return response.data;
+}
+
