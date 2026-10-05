@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { sendChat, generatePlan, generatePlanVariants, updateProject } from "@/lib/api";
+import { sendChat, generatePlan, generatePlanVariants, getMaterialRecommendations, updateProject } from "@/lib/api";
 import { Project, FloorPlan, ChatMessage } from "@/lib/types";
-import { Send, Sparkles, Loader2, SlidersHorizontal, X, Check, LayoutGrid } from "lucide-react";
+import { Send, Sparkles, Loader2, SlidersHorizontal, X, Check, LayoutGrid, Package } from "lucide-react";
 
 interface AIChatPanelProps {
   project: Project;
@@ -162,6 +162,37 @@ export default function AIChatPanel({ project, floorPlan, onPlanGenerated, onPro
     ]);
   };
 
+  const handleRecommendMaterials = async () => {
+    setLoading(true);
+    try {
+      const planParams = paramsToObject(params);
+      const data = await getMaterialRecommendations({
+        floorPlan,
+        parameters: planParams,
+        style: planParams.style,
+        budget: planParams.budget,
+        regionFactor: 1.0,
+      });
+
+      const lines = [
+        `**Рекомендации по материалам** (${data.source === "ai" ? "ИИ" : "заглушка"})`,
+        data.summary,
+        "",
+        ...(data.recommendations || []).map(
+          (r: any) =>
+            `• **${r.category}**: ${r.material} — ${r.total_cost?.toLocaleString("ru-RU")} ₽ (${r.quantity} ${r.unit}, ${r.estimated_cost_per_unit?.toLocaleString("ru-RU")} ₽/${r.unit})\n  ${r.description}`
+        ),
+        "",
+        `**Итого:** ${data.total_estimate?.toLocaleString("ru-RU")} ₽`,
+      ];
+      setMessages([...messages, { role: "assistant", content: lines.join("\n") }]);
+    } catch (err: any) {
+      setMessages([...messages, { role: "assistant", content: "Ошибка получения рекомендаций по материалам." }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const updateParam = (field: keyof PlanParams, value: string) => {
     setParams((prev) => ({ ...prev, [field]: value }));
   };
@@ -301,6 +332,15 @@ export default function AIChatPanel({ project, floorPlan, onPlanGenerated, onPro
           >
             <LayoutGrid className="h-4 w-4" />
             {generating ? "Генерация вариантов..." : "Сгенерировать варианты"}
+          </button>
+          <button
+            type="button"
+            onClick={handleRecommendMaterials}
+            disabled={loading}
+            className="w-full flex items-center justify-center gap-2 border border-slate-200 text-slate-700 bg-slate-50 hover:bg-slate-100 px-3 py-2 rounded-lg text-sm disabled:opacity-50"
+          >
+            <Package className="h-4 w-4" />
+            {loading ? "Анализ..." : "Рекомендации по материалам"}
           </button>
         </div>
       </form>

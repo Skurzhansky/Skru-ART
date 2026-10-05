@@ -21,8 +21,9 @@ from schemas import (
     ChatRequest,
     GeneratePlanRequest,
     EstimateRequest,
+    MaterialsRequest,
 )
-from ai_service import chat_with_ai, generate_floor_plan_from_prompt, generate_floor_plan_variants
+from ai_service import chat_with_ai, generate_floor_plan_from_prompt, generate_floor_plan_variants, recommend_materials
 from floor_plan_generator import generate_rectangular_plan
 from cost_estimator import estimate_costs
 
@@ -242,6 +243,17 @@ def generate_plan_variants(payload: GeneratePlanRequest):
         rooms=payload.rooms,
     )
     return {"variants": variants}
+
+
+@app.post("/ai/materials")
+def materials(payload: MaterialsRequest):
+    return recommend_materials(
+        floor_plan=payload.floor_plan,
+        parameters=payload.parameters,
+        style=payload.style,
+        budget=payload.budget,
+        region_factor=payload.region_factor or 1.0,
+    )
 
 
 @app.post("/ai/estimate")

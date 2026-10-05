@@ -93,6 +93,23 @@ export async function generatePlanVariants(payload: {
   return response.data as { variants: FloorPlan[] };
 }
 
+export async function getMaterialRecommendations(payload: {
+  floorPlan: FloorPlan;
+  parameters?: Record<string, unknown>;
+  style?: string;
+  budget?: number;
+  regionFactor?: number;
+}) {
+  const response = await api.post("/ai/materials", {
+    floor_plan: payload.floorPlan,
+    parameters: payload.parameters,
+    style: payload.style,
+    budget: payload.budget,
+    region_factor: payload.regionFactor ?? 1.0,
+  });
+  return response.data;
+}
+
 export async function estimateCost(floorPlan: FloorPlan, regionFactor = 1.0) {
   const response = await api.post("/ai/estimate", { floor_plan: floorPlan, region_factor: regionFactor });
   return response.data;
