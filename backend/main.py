@@ -22,8 +22,15 @@ from schemas import (
     GeneratePlanRequest,
     EstimateRequest,
     MaterialsRequest,
+    EnergyRequest,
 )
-from ai_service import chat_with_ai, generate_floor_plan_from_prompt, generate_floor_plan_variants, recommend_materials
+from ai_service import (
+    chat_with_ai,
+    generate_floor_plan_from_prompt,
+    generate_floor_plan_variants,
+    recommend_materials,
+    assess_energy_efficiency,
+)
 from floor_plan_generator import generate_rectangular_plan
 from cost_estimator import estimate_costs
 
@@ -252,6 +259,18 @@ def materials(payload: MaterialsRequest):
         parameters=payload.parameters,
         style=payload.style,
         budget=payload.budget,
+        region_factor=payload.region_factor or 1.0,
+    )
+
+
+@app.post("/ai/energy")
+def energy(payload: EnergyRequest):
+    return assess_energy_efficiency(
+        floor_plan=payload.floor_plan,
+        parameters=payload.parameters,
+        style=payload.style,
+        climate_zone=payload.climate_zone,
+        heating_type=payload.heating_type,
         region_factor=payload.region_factor or 1.0,
     )
 

@@ -357,3 +357,112 @@ def _default_materials(
         "recommendations": recommendations,
         "source": "fallback",
     }
+
+
+def assess_energy_efficiency(
+    floor_plan: Dict[str, Any],
+    parameters: Optional[Dict[str, Any]] = None,
+    style: Optional[str] = None,
+    climate_zone: Optional[str] = None,
+    heating_type: Optional[str] = None,
+    region_factor: float = 1.0,
+) -> Dict[str, Any]:
+    """Оценивает энергоэффективность дома через ИИ или по эмпирической формуле."""
+    from floor_plan_generator import compute_plan_area
+
+    area = compute_plan_area(floor_plan)
+    perimeter = 0.0
+    for wall in floor_plan.get("walls", []):
+        dx = wall.get("x2", 0) - wall.get("x1", 0)
+        dy = wall.get("y2", 0) - wall.get("y1", 0)
+        perimeter += (dx ** 2 + dy ** 2) ** 0.5
+
+    system_prompt = (
+        "Ты — эксперт по энергоэффективности частных домов. На основе планировки и параметров "
+        "дай оценку энергоэффективности. Ответ — JSON-объект с ключами: "
+        "efficiency_class (A+, A, B, C, D), heat_loss_w_per_m2 (оценка теплопотерь Вт/м²), "
+        "annual_heating_cost (руб/год), annual_cooling_cost (руб/год), "
+        "recommendations (массив строк с рекомендациями по улучшению), "
+        "summary (краткое резюме). Учитывай площадь, периметр, климатическую зону и тип отопления. "
+        "Отвечай ТОЛЬКО JSON-объектом, без markdown."
+    )
+
+    user_prompt = f"Площадь дома: {area:.1f} м². Периметр стен: {perimeter:.1f} м."
+    if style:
+        user_prompt += f" Стиль: {style}."
+    if climate_zone:
+        user_prompt += f" Климатическая зона: {climate_zone}."
+    if heating_type:
+        user_prompt += f" Тип отопления: {heating_type}."
+    if parameters:
+        user_prompt += f" Параметры: {json.dumps(parameters, ensure_ascii=False)}."
+    user_prompt += f" Региональный коэффициент: {region_factor}."
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.3,
+            max_tokens=1500,
+            response_format={"type": "json_object"},
+        )
+        content = response.choices[0].message.content or "{}"
+        data = json.loads(content)
+        return {
+            "area": area,
+            "perimeter": round(perimeter, 2),
+            "style": style,
+            "climate_zone": climate_zone,
+            "heating_type": heating_type,
+            "region_factor": region_factor,
+            "efficiency_class": data.get("efficiency_class", "C"),
+            "heat_loss_w_per_m2": data.get("heat_loss_w_per_m2", 80),
+            "annual_heating_cost": data.get("annual_heating_cost", 0),
+            "annual_cooling_cost": data.get("annual_cooling_cost", 0),
+            "recommendations": data.get("recommendations", []),
+            "summary": data.get("summary", ""),
+            "source": "ai",
+        }
+    except Exception as e:
+        logger.error(f"Error assessing energy efficiency: {e}")
+        return _default_energy_assessment(area, perimeter, style, climate_zone, heating_type, region_factor)
+
+
+def _default_energy_assessment(
+    area: float,
+    perimeter: float,
+    style: Optional[str] = None,
+    climate_zone: Optional[str] = None,
+    heating_type: Optional[str] = None,
+    region_factor: float = 1.0,
+) -> Dict[str, Any]:
+    # Эмпирическая оценка теплопотерь: упрощённо считаем по площади и периметру
+    base_loss = max(40.0, min(120.0, 40.0 + area * 0.3 + perimeter * 0.2))
+    efficiency_class = "B" if base_loss < 60 else "C" if base_loss < 90 else "D"
+    heating_cost = round(area * 1800 * region_factor * (0.7 if efficiency_class == "B" else 1.0), 0)
+    cooling_cost = round(area * 500 * region_factor, 0)
+    recommendations = [
+        "Утеплить стены минватой или PIR-плитами 150–200 мм.",
+        "Установить двухкамерные ПВХ-окна с энергосберегающим стеклопакетом.",
+        "Добавить утепление пола по грунту и потолка/кровли.",
+        "Рассмотреть рекуператор для вентиляции.",
+        "Выбрать современный котёл с высоким КПД или тепловой насос.",
+    ]
+    return {
+        "area": area,
+        "perimeter": round(perimeter, 2),
+        "style": style,
+        "climate_zone": climate_zone,
+        "heating_type": heating_type,
+        "region_factor": region_factor,
+        "efficiency_class": efficiency_class,
+        "heat_loss_w_per_m2": round(base_loss, 1),
+        "annual_heating_cost": heating_cost,
+        "annual_cooling_cost": cooling_cost,
+        "recommendations": recommendations,
+        "summary": f"Энергоэффективность дома оценена по эмпирической формуле (заглушка, требуется OpenAI API ключ).",
+        "source": "fallback",
+    }

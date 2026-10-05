@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { sendChat, generatePlan, generatePlanVariants, getMaterialRecommendations, updateProject } from "@/lib/api";
+import { sendChat, generatePlan, generatePlanVariants, getMaterialRecommendations, getEnergyAssessment, updateProject } from "@/lib/api";
 import { Project, FloorPlan, ChatMessage } from "@/lib/types";
-import { Send, Sparkles, Loader2, SlidersHorizontal, X, Check, LayoutGrid, Package } from "lucide-react";
+import { Send, Sparkles, Loader2, SlidersHorizontal, X, Check, LayoutGrid, Package, Zap } from "lucide-react";
 
 interface AIChatPanelProps {
   project: Project;
@@ -193,6 +193,37 @@ export default function AIChatPanel({ project, floorPlan, onPlanGenerated, onPro
     }
   };
 
+  const handleEnergyAssessment = async () => {
+    setLoading(true);
+    try {
+      const planParams = paramsToObject(params);
+      const data = await getEnergyAssessment({
+        floorPlan,
+        parameters: planParams,
+        style: planParams.style,
+        regionFactor: 1.0,
+      });
+
+      const lines = [
+        `**Оценка энергоэффективности** (${data.source === "ai" ? "ИИ" : "заглушка"})`,
+        data.summary,
+        "",
+        `**Класс энергоэффективности:** ${data.efficiency_class}`,
+        `**Теплопотери:** ~${data.heat_loss_w_per_m2} Вт/м²`,
+        `**Отопление в год:** ${data.annual_heating_cost?.toLocaleString("ru-RU")} ₽`,
+        `**Охлаждение в год:** ${data.annual_cooling_cost?.toLocaleString("ru-RU")} ₽`,
+        "",
+        "**Рекомендации:**",
+        ...(data.recommendations || []).map((r: string) => `• ${r}`),
+      ];
+      setMessages([...messages, { role: "assistant", content: lines.join("\n") }]);
+    } catch (err: any) {
+      setMessages([...messages, { role: "assistant", content: "Ошибка оценки энергоэффективности." }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const updateParam = (field: keyof PlanParams, value: string) => {
     setParams((prev) => ({ ...prev, [field]: value }));
   };
@@ -341,6 +372,15 @@ export default function AIChatPanel({ project, floorPlan, onPlanGenerated, onPro
           >
             <Package className="h-4 w-4" />
             {loading ? "Анализ..." : "Рекомендации по материалам"}
+          </button>
+          <button
+            type="button"
+            onClick={handleEnergyAssessment}
+            disabled={loading}
+            className="w-full flex items-center justify-center gap-2 border border-slate-200 text-slate-700 bg-slate-50 hover:bg-slate-100 px-3 py-2 rounded-lg text-sm disabled:opacity-50"
+          >
+            <Zap className="h-4 w-4" />
+            {loading ? "Анализ..." : "Оценка энергоэффективности"}
           </button>
         </div>
       </form>

@@ -110,6 +110,25 @@ export async function getMaterialRecommendations(payload: {
   return response.data;
 }
 
+export async function getEnergyAssessment(payload: {
+  floorPlan: FloorPlan;
+  parameters?: Record<string, unknown>;
+  style?: string;
+  climateZone?: string;
+  heatingType?: string;
+  regionFactor?: number;
+}) {
+  const response = await api.post("/ai/energy", {
+    floor_plan: payload.floorPlan,
+    parameters: payload.parameters,
+    style: payload.style,
+    climate_zone: payload.climateZone,
+    heating_type: payload.heatingType,
+    region_factor: payload.regionFactor ?? 1.0,
+  });
+  return response.data;
+}
+
 export async function estimateCost(floorPlan: FloorPlan, regionFactor = 1.0) {
   const response = await api.post("/ai/estimate", { floor_plan: floorPlan, region_factor: regionFactor });
   return response.data;

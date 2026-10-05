@@ -92,3 +92,12 @@ class MaterialsRequest(BaseModel):
     style: Optional[str] = None
     budget: Optional[float] = None
     region_factor: Optional[float] = 1.0
+
+
+class EnergyRequest(BaseModel):
+    floor_plan: Dict[str, Any]
+    parameters: Optional[Dict[str, Any]] = None
+    style: Optional[str] = None
+    climate_zone: Optional[str] = None
+    heating_type: Optional[str] = None
+    region_factor: Optional[float] = 1.0
