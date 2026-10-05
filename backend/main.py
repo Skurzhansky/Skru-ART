@@ -16,7 +16,7 @@ from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
 from database import engine, get_db, Base
-from models import User, Project
+from models import User, Project, Feedback
 from schemas import (
     UserCreate,
     UserRead,
@@ -31,6 +31,8 @@ from schemas import (
     EnergyRequest,
     ExportRequest,
     ProjectPublicRead,
+    FeedbackCreate,
+    FeedbackRead,
 )
 from ai_service import (
     chat_with_ai,
@@ -384,6 +386,23 @@ def restore_version(
     db.commit()
     db.refresh(project)
     return project
+
+
+@app.post("/feedback", response_model=FeedbackRead)
+def create_feedback(
+    payload: FeedbackCreate,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user),
+):
+    feedback = Feedback(
+        user_id=current_user.id if current_user else None,
+        email=payload.email,
+        message=payload.message,
+    )
+    db.add(feedback)
+    db.commit()
+    db.refresh(feedback)
+    return feedback
 
 
 @app.post("/ai/chat")

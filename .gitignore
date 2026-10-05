@@ -28,3 +28,5 @@ Thumbs.db
 backend/uploads/*
 !backend/uploads/.gitkeep
 backend/backups/
+*.pdf
+plan_pdf.py

@@ -229,3 +229,8 @@ export async function restoreProjectVersion(projectId: number, versionIndex: num
   return response.data;
 }
 
+export async function sendFeedback(payload: { message: string; email?: string }) {
+  const response = await api.post("/feedback", payload);
+  return response.data;
+}
+

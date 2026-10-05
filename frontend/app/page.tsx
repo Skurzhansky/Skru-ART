@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { login, register, getMe, listProjects, createProject, deleteProject } from "@/lib/api";
+import { login, register, getMe, listProjects, createProject, deleteProject, sendFeedback } from "@/lib/api";
 import { Project, User } from "@/lib/types";
 import {
   Home, Plus, Trash2, Loader2, Sparkles, Box, FileText,
@@ -20,6 +20,9 @@ export default function HomePage() {
   const [newDescription, setNewDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [feedbackEmail, setFeedbackEmail] = useState("");
+  const [feedbackSent, setFeedbackSent] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -86,6 +89,22 @@ export default function HomePage() {
     setProjects(projects.filter((p) => p.id !== id));
   };
 
+  const handleFeedback = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!feedbackMessage.trim()) return;
+    setLoading(true);
+    try {
+      await sendFeedback({ message: feedbackMessage, email: feedbackEmail || undefined });
+      setFeedbackSent(true);
+      setFeedbackMessage("");
+      setFeedbackEmail("");
+    } catch (err: any) {
+      setError(err.response?.data?.detail || "Ошибка отправки");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const features = [
     { icon: Sparkles, title: "ИИ-генерация", desc: "Опишите дом словами — получите планировку" },
     { icon: Box, title: "2D и 3D", desc: "Редактируйте в 2D, смотрите в 3D" },
@@ -93,6 +112,33 @@ export default function HomePage() {
     { icon: Share2, title: "Поделиться", desc: "Публичная ссылка на проект" },
     { icon: Zap, title: "Материалы", desc: "Рекомендации по материалам от ИИ" },
     { icon: Download, title: "Экспорт", desc: "PDF, DXF, SVG для строителей" },
+  ];
+
+  const faqs = [
+    {
+      q: "Сколько стоит использование?",
+      a: "Бета-версия бесплатна. После запуска будет бесплатный тариф с ограничениями и платные тарифы для профессионалов.",
+    },
+    {
+      q: "Можно ли использовать планировки для строительства?",
+      a: "Планировки подходят для концептуального проектирования и оценки. Для строительства рекомендуем проконсультироваться с архитектором.",
+    },
+    {
+      q: "Как работает ИИ-генерация?",
+      a: "Мы используем GPT-4o-mini. Вы описываете требования — площадь, этажность, стиль, комнаты — и получаете несколько вариантов планировки.",
+    },
+    {
+      q: "Можно ли доработать сгенерированный план?",
+      a: "Да, встроенный 2D-редактор позволяет двигать комнаты, менять размеры, добавлять и удалять помещения. Есть undo/redo.",
+    },
+    {
+      q: "Какие форматы экспорта поддерживаются?",
+      a: "PDF с планом и сметой, SVG и DXF для CAD-программ, JSON для интеграций, текстовый отчёт с характеристиками.",
+    },
+    {
+      q: "Мои данные в безопасности?",
+      a: "Проекты привязаны к аккаунту. Можно делиться публичной ссылкой или хранить в приватности. Данные не передаются третьим лицам.",
+    },
   ];
 
   return (
@@ -178,6 +224,63 @@ export default function HomePage() {
                     </div>
                   ))}
                 </div>
+              </div>
+            </section>
+
+            {/* FAQ */}
+            <section className="py-16 px-6 bg-slate-50">
+              <div className="max-w-3xl mx-auto">
+                <h2 className="text-3xl font-bold text-center mb-12 text-slate-900">Частые вопросы</h2>
+                <div className="space-y-4">
+                  {faqs.map((faq, i) => (
+                    <details key={i} className="bg-white rounded-xl border border-slate-200 overflow-hidden group">
+                      <summary className="px-6 py-4 font-medium cursor-pointer hover:bg-slate-50 flex items-center justify-between list-none">
+                        {faq.q}
+                        <span className="text-slate-400 group-open:rotate-180 transition">▼</span>
+                      </summary>
+                      <div className="px-6 pb-4 text-slate-600">{faq.a}</div>
+                    </details>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            {/* Feedback */}
+            <section className="py-16 px-6 bg-white">
+              <div className="max-w-2xl mx-auto">
+                <h2 className="text-3xl font-bold text-center mb-4 text-slate-900">Обратная связь</h2>
+                <p className="text-slate-600 text-center mb-8">Есть вопрос или предложение? Напишите нам</p>
+                {feedbackSent ? (
+                  <div className="bg-green-50 border border-green-200 rounded-xl p-6 text-center">
+                    <Check className="h-12 w-12 text-green-600 mx-auto mb-4" />
+                    <p className="text-green-800 font-medium">Спасибо! Мы получили ваше сообщение.</p>
+                  </div>
+                ) : (
+                  <form onSubmit={handleFeedback} className="space-y-4">
+                    <textarea
+                      placeholder="Ваше сообщение"
+                      required
+                      value={feedbackMessage}
+                      onChange={(e) => setFeedbackMessage(e.target.value)}
+                      rows={4}
+                      className="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <input
+                      type="email"
+                      placeholder="Email для ответа (необязательно)"
+                      value={feedbackEmail}
+                      onChange={(e) => setFeedbackEmail(e.target.value)}
+                      className="w-full border border-slate-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="w-full bg-slate-900 text-white py-3 rounded-xl hover:bg-slate-800 disabled:opacity-50 font-semibold transition"
+                    >
+                      {loading ? <Loader2 className="animate-spin h-5 w-5 mx-auto" /> : "Отправить"}
+                    </button>
+                  </form>
+                )}
               </div>
             </section>
 

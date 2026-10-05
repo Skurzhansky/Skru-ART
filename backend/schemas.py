@@ -131,3 +131,18 @@ class EnergyRequest(BaseModel):
 class ExportRequest(EnergyRequest):
     title: str = "Проект дома"
     description: Optional[str] = None
+
+
+class FeedbackCreate(BaseModel):
+    message: str
+    email: Optional[str] = None
+
+
+class FeedbackRead(BaseModel):
+    id: int
+    message: str
+    email: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

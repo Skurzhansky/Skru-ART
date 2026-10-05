@@ -8,7 +8,7 @@ import FloorPlanEditor from "@/components/FloorPlanEditor";
 import House3DViewer from "@/components/House3DViewer";
 import AIChatPanel from "@/components/AIChatPanel";
 import CostEstimatePanel from "@/components/CostEstimatePanel";
-import { ArrowLeft, Save, Loader2, Download, ChevronDown, ImagePlus, Share2, Link as LinkIcon, History } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Download, ChevronDown, ImagePlus, Share2, Link as LinkIcon, History, Menu } from "lucide-react";
 import Link from "next/link";
 
 const defaultPlan: FloorPlan = {
@@ -70,6 +70,8 @@ export default function ProjectPage() {
   const [exporting, setExporting] = useState(false);
   const [versionsMenuOpen, setVersionsMenuOpen] = useState(false);
   const [versions, setVersions] = useState<{ index: number; timestamp: string }[]>([]);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const downloadBlob = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob);
@@ -243,17 +245,19 @@ export default function ProjectPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-100">
-      <header className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between shadow">
-        <div className="flex items-center gap-4">
-          <Link href="/" className="text-white hover:text-slate-300">
+      <header className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between shadow flex-wrap gap-2">
+        <div className="flex items-center gap-4 min-w-0">
+          <Link href="/" className="text-white hover:text-slate-300 shrink-0">
             <ArrowLeft className="h-5 w-5" />
           </Link>
-          <div>
-            <h1 className="font-semibold">{project.title}</h1>
-            <p className="text-xs text-slate-300">{project.description || "Нет описания"}</p>
+          <div className="min-w-0">
+            <h1 className="font-semibold truncate">{project.title}</h1>
+            <p className="text-xs text-slate-300 truncate">{project.description || "Нет описания"}</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+
+        {/* Desktop buttons */}
+        <div className="hidden md:flex items-center gap-3">
           <div className="bg-slate-800 rounded-lg p-1 flex">
             <button
               onClick={() => setView("2d")}
@@ -331,40 +335,11 @@ export default function ProjectPage() {
             </button>
             {exportMenuOpen && (
               <div className="absolute right-0 mt-1 w-48 bg-slate-800 rounded-lg shadow-lg border border-slate-700 z-10">
-                <button
-                  onClick={handleExport}
-                  className="block w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-700 first:rounded-t-lg"
-                >
-                  JSON
-                </button>
-                <button
-                  onClick={handleExportPdf}
-                  disabled={exporting}
-                  className="block w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50"
-                >
-                  PDF
-                </button>
-                <button
-                  onClick={handleExportSvg}
-                  disabled={exporting}
-                  className="block w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50"
-                >
-                  SVG
-                </button>
-                <button
-                  onClick={handleExportDxf}
-                  disabled={exporting}
-                  className="block w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50"
-                >
-                  DXF
-                </button>
-                <button
-                  onClick={handleExportReport}
-                  disabled={exporting}
-                  className="block w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-700 last:rounded-b-lg disabled:opacity-50"
-                >
-                  Отчёт (TXT)
-                </button>
+                <button onClick={handleExport} className="block w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-700 first:rounded-t-lg">JSON</button>
+                <button onClick={handleExportPdf} disabled={exporting} className="block w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50">PDF</button>
+                <button onClick={handleExportSvg} disabled={exporting} className="block w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50">SVG</button>
+                <button onClick={handleExportDxf} disabled={exporting} className="block w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50">DXF</button>
+                <button onClick={handleExportReport} disabled={exporting} className="block w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-700 last:rounded-b-lg disabled:opacity-50">Отчёт (TXT)</button>
               </div>
             )}
           </div>
@@ -377,10 +352,77 @@ export default function ProjectPage() {
             Сохранить
           </button>
         </div>
+
+        {/* Mobile menu button */}
+        <div className="md:hidden flex items-center gap-2">
+          <div className="bg-slate-800 rounded-lg p-1 flex">
+            <button
+              onClick={() => setView("2d")}
+              className={`px-2 py-1 text-xs rounded-md transition ${view === "2d" ? "bg-white text-slate-900" : "text-slate-300 hover:text-white"}`}
+            >
+              2D
+            </button>
+            <button
+              onClick={() => setView("3d")}
+              className={`px-2 py-1 text-xs rounded-md transition ${view === "3d" ? "bg-white text-slate-900" : "text-slate-300 hover:text-white"}`}
+            >
+              3D
+            </button>
+          </div>
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Mobile dropdown */}
+        {mobileMenuOpen && (
+          <div className="md:hidden absolute top-full right-0 mt-1 w-56 bg-slate-800 rounded-lg shadow-lg border border-slate-700 z-50 mr-4">
+            <label className="flex items-center gap-2 px-4 py-3 text-sm text-slate-200 hover:bg-slate-700 cursor-pointer">
+              <ImagePlus className="h-4 w-4" />
+              Фото участка
+              <input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
+            </label>
+            <button
+              onClick={handleShareToggle}
+              disabled={exporting}
+              className="w-full flex items-center gap-2 px-4 py-3 text-sm text-slate-200 hover:bg-slate-700"
+            >
+              {project.is_public ? <LinkIcon className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
+              {project.is_public ? "Скопировать ссылку" : "Поделиться"}
+            </button>
+            <button
+              onClick={handleSaveVersion}
+              className="w-full flex items-center gap-2 px-4 py-3 text-sm text-slate-200 hover:bg-slate-700"
+            >
+              <History className="h-4 w-4" />
+              Сохранить версию
+            </button>
+            <div className="border-t border-slate-700">
+              <button onClick={handleExport} className="w-full flex items-center gap-2 px-4 py-3 text-sm text-slate-200 hover:bg-slate-700">Экспорт JSON</button>
+              <button onClick={handleExportPdf} disabled={exporting} className="w-full flex items-center gap-2 px-4 py-3 text-sm text-slate-200 hover:bg-slate-700">Экспорт PDF</button>
+              <button onClick={handleExportSvg} disabled={exporting} className="w-full flex items-center gap-2 px-4 py-3 text-sm text-slate-200 hover:bg-slate-700">Экспорт SVG</button>
+              <button onClick={handleExportDxf} disabled={exporting} className="w-full flex items-center gap-2 px-4 py-3 text-sm text-slate-200 hover:bg-slate-700">Экспорт DXF</button>
+              <button onClick={handleExportReport} disabled={exporting} className="w-full flex items-center gap-2 px-4 py-3 text-sm text-slate-200 hover:bg-slate-700">Отчёт (TXT)</button>
+            </div>
+            <div className="border-t border-slate-700 p-2">
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 px-4 py-2 rounded-lg text-sm font-medium"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                Сохранить
+              </button>
+            </div>
+          </div>
+        )}
       </header>
 
-      <div className="flex-1 flex overflow-hidden">
-        <main className="flex-1 p-4 overflow-auto">
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+        <main className="flex-1 p-4 overflow-auto min-h-[50vh]">
           {view === "2d" ? (
             <FloorPlanEditor floorPlan={floorPlan} onChange={setFloorPlan} />
           ) : (
@@ -388,7 +430,15 @@ export default function ProjectPage() {
           )}
         </main>
 
-        <aside className="w-96 bg-white border-l shadow-sm flex flex-col overflow-hidden">
+        {/* Mobile toggle for sidebar */}
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className="lg:hidden fixed bottom-4 right-4 bg-slate-900 text-white p-3 rounded-full shadow-lg z-40"
+        >
+          {sidebarOpen ? "Скрыть" : "Панель"}
+        </button>
+
+        <aside className={`${sidebarOpen ? "flex" : "hidden"} lg:flex w-full lg:w-96 bg-white border-t lg:border-t-0 lg:border-l shadow-sm flex-col overflow-hidden max-h-[50vh] lg:max-h-none`}>
           <AIChatPanel
             project={project}
             floorPlan={floorPlan}
