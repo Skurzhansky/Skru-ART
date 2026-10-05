@@ -137,3 +137,90 @@ def _default_plan() -> Dict[str, Any]:
             {"x": 5, "y": 0, "width": 1.2, "orientation": "horizontal", "room_id": 1},
         ],
     }
+
+
+def generate_floor_plan_variants(
+    prompt: str,
+    area: Optional[float] = None,
+    floors: int = 1,
+    budget: Optional[float] = None,
+    style: Optional[str] = None,
+    rooms: Optional[List[str]] = None,
+    count: int = 3,
+) -> List[Dict[str, Any]]:
+    """Генерирует несколько вариантов планировок через OpenAI."""
+    system_prompt = (
+        "Ты — генератор планировок частных домов в JSON. "
+        f"На основе запроса пользователя сформируй ровно {count} различных варианта планировки. "
+        "Ответ — JSON-объект с ключом \"variants\", содержащим массив из планировок. "
+        "Каждая планировка должна содержать keys: rooms (id, name, x, y, width, height, type), "
+        "walls (x1, y1, x2, y2, thickness), doors (x, y, width, orientation, room_id), "
+        "windows (x, y, width, orientation, room_id). Координаты в метрах. "
+        "Отвечай ТОЛЬКО JSON-объектом, без markdown и пояснений."
+    )
+
+    user_prompt = f"Запрос: {prompt}. Этажей: {floors}."
+    if area:
+        user_prompt += f" Площадь: {area} м²."
+    if budget:
+        user_prompt += f" Бюджет: {budget} руб."
+    if style:
+        user_prompt += f" Стиль: {style}."
+    if rooms:
+        user_prompt += f" Нужны комнаты: {', '.join(rooms)}."
+    user_prompt += f" Создай {count} разных варианта расположения комнат."
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.7,
+            max_tokens=4000,
+            response_format={"type": "json_object"},
+        )
+        content = response.choices[0].message.content or "{}"
+        data = json.loads(content)
+        variants = data.get("variants", [])
+        if not isinstance(variants, list) or len(variants) == 0:
+            raise ValueError("No variants returned")
+        return [_normalize_plan(plan) for plan in variants]
+    except Exception as e:
+        logger.error(f"Error generating variants: {e}")
+        # Fallback: rotate the default plan to create visually different variants
+        base = _default_plan()
+        return [base, _rotate_plan(base), _mirror_plan(base)]
+
+
+def _rotate_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
+    """Создаёт вариант планировки, отражённый по диагонали."""
+    import copy
+    rotated = copy.deepcopy(plan)
+    max_x = max((r.get("x", 0) + r.get("width", 0) for r in rotated.get("rooms", [])), default=0)
+    for room in rotated.get("rooms", []):
+        x, y = room.get("x", 0), room.get("y", 0)
+        width, height = room.get("width", 0), room.get("height", 0)
+        room["x"] = y
+        room["y"] = x
+        room["width"] = height
+        room["height"] = width
+    for wall in rotated.get("walls", []):
+        x1, y1, x2, y2 = wall["x1"], wall["y1"], wall["x2"], wall["y2"]
+        wall["x1"], wall["y1"] = y1, x1
+        wall["x2"], wall["y2"] = y2, x2
+    return rotated
+
+
+def _mirror_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
+    """Создаёт зеркальный вариант планировки относительно вертикальной оси."""
+    import copy
+    mirrored = copy.deepcopy(plan)
+    max_x = max((r.get("x", 0) + r.get("width", 0) for r in mirrored.get("rooms", [])), default=0)
+    for room in mirrored.get("rooms", []):
+        room["x"] = max_x - room.get("x", 0) - room.get("width", 0)
+    for wall in mirrored.get("walls", []):
+        wall["x1"] = max_x - wall["x1"]
+        wall["x2"] = max_x - wall["x2"]
+    return mirrored

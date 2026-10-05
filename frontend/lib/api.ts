@@ -81,6 +81,18 @@ export async function generatePlan(payload: {
   return response.data;
 }
 
+export async function generatePlanVariants(payload: {
+  prompt: string;
+  area?: number;
+  floors?: number;
+  budget?: number;
+  style?: string;
+  rooms?: string[];
+}) {
+  const response = await api.post("/ai/generate-plan-variants", payload);
+  return response.data as { variants: FloorPlan[] };
+}
+
 export async function estimateCost(floorPlan: FloorPlan, regionFactor = 1.0) {
   const response = await api.post("/ai/estimate", { floor_plan: floorPlan, region_factor: regionFactor });
   return response.data;

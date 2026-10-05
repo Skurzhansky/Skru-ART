@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { sendChat, generatePlan, updateProject } from "@/lib/api";
+import { sendChat, generatePlan, generatePlanVariants, updateProject } from "@/lib/api";
 import { Project, FloorPlan, ChatMessage } from "@/lib/types";
-import { Send, Sparkles, Loader2, SlidersHorizontal } from "lucide-react";
+import { Send, Sparkles, Loader2, SlidersHorizontal, X, Check, LayoutGrid } from "lucide-react";
 
 interface AIChatPanelProps {
   project: Project;
@@ -20,12 +20,18 @@ interface PlanParams {
   rooms: string;
 }
 
+function computeArea(plan: FloorPlan) {
+  return plan.rooms.reduce((sum, r) => sum + r.width * r.height, 0).toFixed(1);
+}
+
 export default function AIChatPanel({ project, floorPlan, onPlanGenerated, onProjectUpdate }: AIChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [showParams, setShowParams] = useState(false);
+  const [variants, setVariants] = useState<FloorPlan[] | null>(null);
+  const [showVariants, setShowVariants] = useState(false);
   const [params, setParams] = useState<PlanParams>(() => {
     const p = project.parameters || {};
     return {
@@ -83,10 +89,17 @@ export default function AIChatPanel({ project, floorPlan, onPlanGenerated, onPro
     }
   };
 
+  const runGeneration = async () => {
+    const planParams = paramsToObject(params);
+    await updateProject(project.id, { parameters: planParams });
+    onProjectUpdate?.();
+    return planParams;
+  };
+
   const handleGeneratePlan = async () => {
     setGenerating(true);
     try {
-      const planParams = paramsToObject(params);
+      const planParams = await runGeneration();
       const plan = await generatePlan({
         prompt: input || `Создай планировку для проекта "${project.title}"`,
         area: planParams.area,
@@ -95,10 +108,6 @@ export default function AIChatPanel({ project, floorPlan, onPlanGenerated, onPro
         style: planParams.style,
         rooms: planParams.rooms,
       });
-
-      // Save parameters used for generation
-      await updateProject(project.id, { parameters: planParams });
-      onProjectUpdate?.();
 
       onPlanGenerated(plan);
       setMessages([
@@ -116,12 +125,49 @@ export default function AIChatPanel({ project, floorPlan, onPlanGenerated, onPro
     }
   };
 
+  const handleGenerateVariants = async () => {
+    setGenerating(true);
+    setVariants(null);
+    setShowVariants(true);
+    try {
+      const planParams = await runGeneration();
+      const data = await generatePlanVariants({
+        prompt: input || `Создай несколько вариантов планировки для проекта "${project.title}"`,
+        area: planParams.area,
+        floors: planParams.floors,
+        budget: planParams.budget,
+        style: planParams.style,
+        rooms: planParams.rooms,
+      });
+      setVariants(data.variants);
+      setMessages([
+        ...messages,
+        { role: "assistant", content: `Сгенерировано ${data.variants.length} варианта планировки. Выберите подходящий.` },
+      ]);
+    } catch (err: any) {
+      setMessages([...messages, { role: "assistant", content: "Ошибка генерации вариантов. Убедитесь, что в backend задан OPENAI_API_KEY." }]);
+      setShowVariants(false);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const applyVariant = (plan: FloorPlan) => {
+    onPlanGenerated(plan);
+    setShowVariants(false);
+    setVariants(null);
+    setMessages([
+      ...messages,
+      { role: "assistant", content: "Вариант применён. Можете доработать его в редакторе." },
+    ]);
+  };
+
   const updateParam = (field: keyof PlanParams, value: string) => {
     setParams((prev) => ({ ...prev, [field]: value }));
   };
 
   return (
-    <div className="flex flex-col h-[50%] min-h-[300px]">
+    <div className="relative flex flex-col h-[50%] min-h-[300px]">
       <div className="px-4 py-3 border-b bg-slate-50 flex items-center gap-2">
         <Sparkles className="h-5 w-5 text-blue-600" />
         <h2 className="font-semibold">ИИ-помощник</h2>
@@ -146,7 +192,7 @@ export default function AIChatPanel({ project, floorPlan, onPlanGenerated, onPro
         {(loading || generating) && (
           <div className="flex items-center gap-2 text-slate-500 text-sm">
             <Loader2 className="h-4 w-4 animate-spin" />
-            {generating ? "Генерирую планировку..." : "ИИ печатает..."}
+            {generating ? "Генерирую..." : "ИИ печатает..."}
           </div>
         )}
       </div>
@@ -237,16 +283,73 @@ export default function AIChatPanel({ project, floorPlan, onPlanGenerated, onPro
           </div>
         )}
 
-        <button
-          type="button"
-          onClick={handleGeneratePlan}
-          disabled={generating}
-          className="w-full flex items-center justify-center gap-2 border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-lg text-sm disabled:opacity-50"
-        >
-          <Sparkles className="h-4 w-4" />
-          {generating ? "Генерация..." : "Сгенерировать планировку ИИ"}
-        </button>
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={handleGeneratePlan}
+            disabled={generating}
+            className="w-full flex items-center justify-center gap-2 border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-lg text-sm disabled:opacity-50"
+          >
+            <Sparkles className="h-4 w-4" />
+            {generating ? "Генерация..." : "Сгенерировать планировку ИИ"}
+          </button>
+          <button
+            type="button"
+            onClick={handleGenerateVariants}
+            disabled={generating}
+            className="w-full flex items-center justify-center gap-2 border border-slate-200 text-slate-700 bg-slate-50 hover:bg-slate-100 px-3 py-2 rounded-lg text-sm disabled:opacity-50"
+          >
+            <LayoutGrid className="h-4 w-4" />
+            {generating ? "Генерация вариантов..." : "Сгенерировать варианты"}
+          </button>
+        </div>
       </form>
+
+      {showVariants && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[80%] flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b">
+              <h3 className="font-semibold">Варианты планировки</h3>
+              <button
+                onClick={() => setShowVariants(false)}
+                className="text-slate-400 hover:text-slate-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {variants == null ? (
+                <div className="flex flex-col items-center justify-center py-8 text-slate-500">
+                  <Loader2 className="h-8 w-8 animate-spin mb-2" />
+                  <p className="text-sm">Генерируем варианты...</p>
+                </div>
+              ) : variants.length === 0 ? (
+                <p className="text-sm text-slate-500 text-center py-8">Не удалось сгенерировать варианты.</p>
+              ) : (
+                variants.map((plan, idx) => (
+                  <div key={idx} className="border rounded-lg p-3 hover:border-blue-400 transition">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-medium text-sm">Вариант {idx + 1}</h4>
+                      <button
+                        onClick={() => applyVariant(plan)}
+                        className="flex items-center gap-1 text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded transition"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                        Применить
+                      </button>
+                    </div>
+                    <div className="text-xs text-slate-500 space-y-1">
+                      <p>Площадь: {computeArea(plan)} м²</p>
+                      <p>Комнат: {plan.rooms.length}</p>
+                      <p>{plan.rooms.map((r) => r.name).join(", ")}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -22,7 +22,7 @@ from schemas import (
     GeneratePlanRequest,
     EstimateRequest,
 )
-from ai_service import chat_with_ai, generate_floor_plan_from_prompt
+from ai_service import chat_with_ai, generate_floor_plan_from_prompt, generate_floor_plan_variants
 from floor_plan_generator import generate_rectangular_plan
 from cost_estimator import estimate_costs
 
@@ -229,6 +229,19 @@ def generate_plan(payload: GeneratePlanRequest):
             rooms=payload.rooms,
         )
     return plan
+
+
+@app.post("/ai/generate-plan-variants")
+def generate_plan_variants(payload: GeneratePlanRequest):
+    variants = generate_floor_plan_variants(
+        prompt=payload.prompt,
+        area=payload.area,
+        floors=payload.floors,
+        budget=payload.budget,
+        style=payload.style,
+        rooms=payload.rooms,
+    )
+    return {"variants": variants}
 
 
 @app.post("/ai/estimate")
