@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useRef, useState, useMemo } from "react";
+import React, { useRef, useState, useMemo, useEffect, useCallback } from "react";
 import { FloorPlan, Room } from "@/lib/types";
-import { Plus, Trash2, Grid3X3 } from "lucide-react";
+import { Plus, Trash2, Grid3X3, Undo2, Redo2 } from "lucide-react";
 
 interface FloorPlanEditorProps {
   floorPlan: FloorPlan;
@@ -12,6 +12,7 @@ interface FloorPlanEditorProps {
 const SCALE = 60;
 const PADDING = 40;
 const SNAP = 0.5;
+const MAX_HISTORY = 50;
 
 const roomColors: Record<string, string> = {
   living: "#dbeafe",
@@ -31,20 +32,99 @@ function findNextId(rooms: Room[]) {
   return rooms.length > 0 ? Math.max(...rooms.map((r) => r.id)) + 1 : 1;
 }
 
+function plansEqual(a: FloorPlan, b: FloorPlan) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditorProps) {
   const svgRef = useRef<SVGSVGElement>(null);
+  const [history, setHistory] = useState<FloorPlan[]>([floorPlan]);
+  const [historyIndex, setHistoryIndex] = useState(0);
   const [draggingRoom, setDraggingRoom] = useState<number | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [dragStartPlan, setDragStartPlan] = useState<FloorPlan | null>(null);
   const [selectedRoom, setSelectedRoom] = useState<number | null>(null);
 
+  const currentPlan = history[historyIndex];
+
+  // Sync external plan changes (e.g. AI generation) into history
+  useEffect(() => {
+    if (!plansEqual(floorPlan, currentPlan)) {
+      const next = history.slice(0, historyIndex + 1);
+      const trimmed = next.length >= MAX_HISTORY ? next.slice(next.length - MAX_HISTORY + 1) : next;
+      setHistory([...trimmed, floorPlan]);
+      setHistoryIndex(trimmed.length);
+    }
+  }, [floorPlan]);
+
+  const commit = useCallback(
+    (plan: FloorPlan) => {
+      if (plansEqual(plan, currentPlan)) return;
+      const next = history.slice(0, historyIndex + 1);
+      const trimmed = next.length >= MAX_HISTORY ? next.slice(next.length - MAX_HISTORY + 1) : next;
+      setHistory([...trimmed, plan]);
+      setHistoryIndex(trimmed.length);
+      onChange(plan);
+    },
+    [history, historyIndex, currentPlan, onChange]
+  );
+
+  const replaceCurrent = useCallback(
+    (plan: FloorPlan) => {
+      const newHistory = [...history];
+      newHistory[historyIndex] = plan;
+      setHistory(newHistory);
+      onChange(plan);
+    },
+    [history, historyIndex, onChange]
+  );
+
+  const undo = useCallback(() => {
+    if (historyIndex > 0) {
+      const nextIndex = historyIndex - 1;
+      setHistoryIndex(nextIndex);
+      onChange(history[nextIndex]);
+      setSelectedRoom(null);
+    }
+  }, [history, historyIndex, onChange]);
+
+  const redo = useCallback(() => {
+    if (historyIndex < history.length - 1) {
+      const nextIndex = historyIndex + 1;
+      setHistoryIndex(nextIndex);
+      onChange(history[nextIndex]);
+      setSelectedRoom(null);
+    }
+  }, [history, historyIndex, onChange]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [undo, redo]);
+
   const bounds = useMemo(() => {
-    const xs = floorPlan.rooms.map((r) => r.x + r.width);
-    const ys = floorPlan.rooms.map((r) => r.y + r.height);
+    const xs = currentPlan.rooms.map((r) => r.x + r.width);
+    const ys = currentPlan.rooms.map((r) => r.y + r.height);
     return {
       width: Math.max(...xs, 10) * SCALE + PADDING * 2,
       height: Math.max(...ys, 10) * SCALE + PADDING * 2,
     };
-  }, [floorPlan]);
+  }, [currentPlan]);
 
   const toSvgX = (x: number) => PADDING + x * SCALE;
   const toSvgY = (y: number) => bounds.height - (PADDING + y * SCALE);
@@ -57,6 +137,7 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
     e.stopPropagation();
     setSelectedRoom(room.id);
     setDraggingRoom(room.id);
+    setDragStartPlan(currentPlan);
     const svg = svgRef.current;
     if (!svg) return;
     const pt = svg.createSVGPoint();
@@ -83,14 +164,18 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
     const newX = Math.max(0, snap(rawX, SNAP));
     const newY = Math.max(0, snap(rawY, SNAP));
 
-    onChange({
-      ...floorPlan,
-      rooms: floorPlan.rooms.map((r) => (r.id === draggingRoom ? { ...r, x: newX, y: newY } : r)),
+    replaceCurrent({
+      ...currentPlan,
+      rooms: currentPlan.rooms.map((r) => (r.id === draggingRoom ? { ...r, x: newX, y: newY } : r)),
     });
   };
 
   const handleMouseUp = () => {
+    if (draggingRoom != null && dragStartPlan && !plansEqual(currentPlan, dragStartPlan)) {
+      commit(currentPlan);
+    }
     setDraggingRoom(null);
+    setDragStartPlan(null);
   };
 
   const updateRoom = (id: number, field: keyof Room, value: any) => {
@@ -98,14 +183,15 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
     if (field === "width" || field === "height") {
       cleanValue = Math.max(0.5, snap(parseFloat(value) || 1, SNAP));
     }
-    onChange({
-      ...floorPlan,
-      rooms: floorPlan.rooms.map((r) => (r.id === id ? { ...r, [field]: cleanValue } : r)),
-    });
+    const nextPlan = {
+      ...currentPlan,
+      rooms: currentPlan.rooms.map((r) => (r.id === id ? { ...r, [field]: cleanValue } : r)),
+    };
+    commit(nextPlan);
   };
 
   const addRoom = () => {
-    const id = findNextId(floorPlan.rooms);
+    const id = findNextId(currentPlan.rooms);
     const newRoom: Room = {
       id,
       name: `Комната ${id}`,
@@ -115,25 +201,21 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
       width: 3,
       height: 3,
     };
-
-    // Try to place the new room next to existing ones without overlap
-    const placed = tryPlaceRoom(floorPlan.rooms, newRoom);
-    onChange({
-      ...floorPlan,
-      rooms: [...floorPlan.rooms, placed],
-    });
+    const placed = tryPlaceRoom(currentPlan.rooms, newRoom);
+    const nextPlan = { ...currentPlan, rooms: [...currentPlan.rooms, placed] };
+    commit(nextPlan);
     setSelectedRoom(placed.id);
   };
 
   const deleteRoom = (id: number) => {
-    onChange({
-      ...floorPlan,
-      rooms: floorPlan.rooms.filter((r) => r.id !== id),
-    });
+    const nextPlan = { ...currentPlan, rooms: currentPlan.rooms.filter((r) => r.id !== id) };
+    commit(nextPlan);
     if (selectedRoom === id) setSelectedRoom(null);
   };
 
-  const selected = floorPlan.rooms.find((r) => r.id === selectedRoom);
+  const selected = currentPlan.rooms.find((r) => r.id === selectedRoom);
+  const canUndo = historyIndex > 0;
+  const canRedo = historyIndex < history.length - 1;
 
   return (
     <div className="flex flex-col h-full">
@@ -144,6 +226,27 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
             <Grid3X3 className="h-3.5 w-3.5" />
             <span>Привязка {SNAP} м</span>
           </div>
+
+          <div className="flex items-center bg-white border rounded-lg overflow-hidden">
+            <button
+              onClick={undo}
+              disabled={!canUndo}
+              title="Отменить (Ctrl+Z)"
+              className="flex items-center gap-1 px-2.5 py-1.5 text-sm hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent transition"
+            >
+              <Undo2 className="h-4 w-4" />
+            </button>
+            <div className="w-px h-5 bg-slate-200" />
+            <button
+              onClick={redo}
+              disabled={!canRedo}
+              title="Повторить (Ctrl+Shift+Z / Ctrl+Y)"
+              className="flex items-center gap-1 px-2.5 py-1.5 text-sm hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-transparent transition"
+            >
+              <Redo2 className="h-4 w-4" />
+            </button>
+          </div>
+
           {selected && (
             <button
               onClick={() => deleteRoom(selected.id)}
@@ -181,7 +284,7 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
           </defs>
           <rect width={bounds.width} height={bounds.height} fill="url(#grid)" />
 
-          {floorPlan.walls.map((w, i) => (
+          {currentPlan.walls.map((w, i) => (
             <line
               key={`wall-${i}`}
               x1={toSvgX(w.x1)}
@@ -194,7 +297,7 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
             />
           ))}
 
-          {floorPlan.rooms.map((room) => (
+          {currentPlan.rooms.map((room) => (
             <g key={room.id} onMouseDown={(e) => handleMouseDown(e, room)}>
               <rect
                 x={toSvgX(room.x)}
@@ -228,7 +331,7 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
             </g>
           ))}
 
-          {floorPlan.doors.map((d, i) => (
+          {currentPlan.doors.map((d, i) => (
             <rect
               key={`door-${i}`}
               x={toSvgX(d.x)}
@@ -240,7 +343,7 @@ export default function FloorPlanEditor({ floorPlan, onChange }: FloorPlanEditor
             />
           ))}
 
-          {floorPlan.windows.map((w, i) => (
+          {currentPlan.windows.map((w, i) => (
             <rect
               key={`window-${i}`}
               x={toSvgX(w.x)}
@@ -323,7 +426,6 @@ function tryPlaceRoom(existingRooms: Room[], newRoom: Room): Room {
     }
   }
 
-  // Fallback: place far to the right
   const maxX = existingRooms.reduce((max, r) => Math.max(max, r.x + r.width), 0);
   return { ...newRoom, x: snap(maxX + 0.5, SNAP), y: 0 };
 }
