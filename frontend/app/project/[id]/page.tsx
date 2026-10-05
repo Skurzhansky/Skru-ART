@@ -2,13 +2,13 @@
 
 import React, { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { getProject, updateProject, exportPdf, exportSvg, exportDxf, exportReport } from "@/lib/api";
+import { getProject, updateProject, exportPdf, exportSvg, exportDxf, exportReport, uploadSitePhoto, shareProject, unshareProject } from "@/lib/api";
 import { Project, FloorPlan, CostEstimate } from "@/lib/types";
 import FloorPlanEditor from "@/components/FloorPlanEditor";
 import House3DViewer from "@/components/House3DViewer";
 import AIChatPanel from "@/components/AIChatPanel";
 import CostEstimatePanel from "@/components/CostEstimatePanel";
-import { ArrowLeft, Save, Loader2, Download, ChevronDown } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Download, ChevronDown, ImagePlus, Share2, Link as LinkIcon } from "lucide-react";
 import Link from "next/link";
 
 const defaultPlan: FloorPlan = {
@@ -155,6 +155,39 @@ export default function ProjectPage() {
     }
   };
 
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!project || !e.target.files?.[0]) return;
+    setExporting(true);
+    try {
+      const updated = await uploadSitePhoto(project.id, e.target.files[0]);
+      setProject(updated);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || "Ошибка загрузки фото");
+    } finally {
+      setExporting(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleShareToggle = async () => {
+    if (!project) return;
+    setExporting(true);
+    try {
+      const updated = project.is_public
+        ? await unshareProject(project.id)
+        : await shareProject(project.id);
+      setProject(updated);
+      if (updated.public_token) {
+        const url = `${window.location.origin}/public/${updated.public_token}`;
+        navigator.clipboard.writeText(url);
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.detail || "Ошибка настройки доступа");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (error && !project) {
     return (
       <div className="p-8 text-red-600">
@@ -199,6 +232,19 @@ export default function ProjectPage() {
               3D вид
             </button>
           </div>
+          <label className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer">
+            <ImagePlus className="h-4 w-4" />
+            Фото участка
+            <input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
+          </label>
+          <button
+            onClick={handleShareToggle}
+            disabled={exporting}
+            className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm font-medium"
+          >
+            {project.is_public ? <LinkIcon className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
+            {project.is_public ? "Скопировать ссылку" : "Поделиться"}
+          </button>
           <div className="relative">
             <button
               onClick={() => setExportMenuOpen(!exportMenuOpen)}

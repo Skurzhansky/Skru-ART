@@ -190,3 +190,27 @@ export async function exportReport(payload: {
   return response.data;
 }
 
+export async function uploadSitePhoto(projectId: number, file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await api.post(`/projects/${projectId}/photo`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return response.data;
+}
+
+export async function shareProject(projectId: number) {
+  const response = await api.post(`/projects/${projectId}/share`);
+  return response.data;
+}
+
+export async function unshareProject(projectId: number) {
+  const response = await api.post(`/projects/${projectId}/unshare`);
+  return response.data;
+}
+
+export async function getPublicProject(token: string) {
+  const response = await api.get(`/public/${token}`);
+  return response.data;
+}
+

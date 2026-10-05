@@ -46,6 +46,9 @@ export interface Project {
   parameters?: Record<string, unknown>;
   floor_plan?: FloorPlan;
   materials_estimate?: Record<string, unknown>;
+  site_photo_url?: string;
+  is_public?: number;
+  public_token?: string;
   owner_id: number;
   created_at: string;
   updated_at: string;

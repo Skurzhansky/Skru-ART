@@ -25,3 +25,5 @@ frontend/dist/
 # OS
 .DS_Store
 Thumbs.db
+backend/uploads/*
+!backend/uploads/.gitkeep

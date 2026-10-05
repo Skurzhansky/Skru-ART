@@ -81,6 +81,11 @@
 - [x] Генерация планировки по текстовому запросу через OpenAI с параметрами (площадь, этажность, стиль, бюджет, комнаты)
 - [x] Предварительный расчёт сметы строительства
 - [x] Экспорт проекта в JSON
+- [x] Загрузка фото участка
+- [x] Публичный доступ к проекту по ссылке
+- [x] Экспорт в PDF, SVG, DXF и текстовый отчёт
+- [x] PostgreSQL через DATABASE_URL
+- [x] Docker и docker-compose для деплоя
 
 ### В планах
 
@@ -208,6 +213,11 @@ house-designer-ai/
 | GET    | `/projects/{id}`    | Получить проект             | Bearer |
 | PATCH  | `/projects/{id}`    | Обновить проект             | Bearer |
 | DELETE | `/projects/{id}`    | Удалить проект              | Bearer |
+| POST   | `/projects/{id}/photo`  | Загрузить фото участка     | Bearer |
+| GET    | `/projects/{id}/photo`  | Получить фото участка      | Bearer |
+| POST   | `/projects/{id}/share`  | Включить публичный доступ  | Bearer |
+| POST   | `/projects/{id}/unshare`| Отключить публичный доступ | Bearer |
+| GET    | `/public/{token}`       | Публичный проект по ссылке | —    |
 
 ### AI
 
@@ -414,6 +424,51 @@ Frontend откроется на `http://localhost:3000`.
 
 ---
 
+## Деплой
+
+### Docker Compose (рекомендуется)
+
+```bash
+docker-compose up --build
+```
+
+Поднимает три сервиса:
+- `backend` — FastAPI на `http://localhost:8000`
+- `frontend` — Next.js на `http://localhost:3000`
+- `db` — PostgreSQL 16
+
+Перед запуском создай `.env` в корне:
+
+```env
+OPENAI_API_KEY=sk-your-real-key
+SECRET_KEY=your-strong-secret
+```
+
+### Ручной деплой
+
+**Backend (Render/Railway/Heroku):**
+
+```bash
+cd backend
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port $PORT
+```
+
+Установи `DATABASE_URL` на PostgreSQL и `SECRET_KEY`.
+
+**Frontend (Vercel/Netlify):**
+
+```bash
+cd frontend
+npm install
+npm run build
+npm start
+```
+
+Установи `NEXT_PUBLIC_API_URL` на URL backend.
+
+---
+
 ## Тестирование
 
 ### Backend
@@ -499,10 +554,11 @@ npm run lint
 
 ### v0.5 — Платформа
 
-- [ ] PostgreSQL
-- [ ] Загрузка фото участка
-- [ ] Совместный доступ к проекту
+- [x] PostgreSQL (через DATABASE_URL, psycopg[binary])
+- [x] Загрузка фото участка
+- [x] Совместный доступ к проекту (публичная ссылка)
 - [ ] Платежи и тарифы
+- [x] Docker и docker-compose для деплоя
 
 ---
 

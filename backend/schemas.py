@@ -48,15 +48,33 @@ class ProjectUpdate(BaseModel):
     parameters: Optional[Dict[str, Any]] = None
     floor_plan: Optional[Dict[str, Any]] = None
     materials_estimate: Optional[Dict[str, Any]] = None
+    site_photo_url: Optional[str] = None
+    is_public: Optional[int] = None
 
 
 class ProjectRead(ProjectBase):
     id: int
     floor_plan: Optional[Dict[str, Any]] = None
     materials_estimate: Optional[Dict[str, Any]] = None
+    site_photo_url: Optional[str] = None
+    is_public: int = 0
+    public_token: Optional[str] = None
     owner_id: int
     created_at: datetime
     updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ProjectPublicRead(BaseModel):
+    id: int
+    title: str
+    description: Optional[str] = None
+    parameters: Optional[Dict[str, Any]] = None
+    floor_plan: Optional[Dict[str, Any]] = None
+    site_photo_url: Optional[str] = None
+    created_at: datetime
 
     class Config:
         from_attributes = True

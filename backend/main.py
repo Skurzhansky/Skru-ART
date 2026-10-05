@@ -1,10 +1,13 @@
 import os
+import secrets
+import shutil
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from fastapi import FastAPI, Depends, HTTPException, status, Response
+from fastapi import FastAPI, Depends, HTTPException, status, Response, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.staticfiles import StaticFiles
 import bcrypt
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
@@ -24,6 +27,7 @@ from schemas import (
     MaterialsRequest,
     EnergyRequest,
     ExportRequest,
+    ProjectPublicRead,
 )
 from ai_service import (
     chat_with_ai,
@@ -37,6 +41,9 @@ from cost_estimator import estimate_costs
 from export_service import generate_plan_pdf, generate_plan_dxf, generate_plan_svg, generate_project_report
 
 Base.metadata.create_all(bind=engine)
+
+UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = FastAPI(title="AI House Designer API", version="0.1.0")
 
@@ -53,6 +60,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me-secret")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
@@ -110,6 +118,11 @@ def get_current_user_required(
 @app.get("/")
 def read_root():
     return {"message": "AI House Designer API"}
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
 
 @app.post("/auth/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
@@ -211,6 +224,92 @@ def delete_project(
     db.delete(project)
     db.commit()
     return None
+
+
+@app.post("/projects/{project_id}/photo", response_model=ProjectRead)
+def upload_site_photo(
+    project_id: int,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    project = db.query(Project).filter(Project.id == project_id, Project.owner_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in {".jpg", ".jpeg", ".png", ".webp"}:
+        raise HTTPException(status_code=400, detail="Unsupported file type")
+
+    filename = f"site_{project_id}_{secrets.token_hex(8)}{ext}"
+    filepath = os.path.join(UPLOAD_DIR, filename)
+    with open(filepath, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    project.site_photo_url = f"/uploads/{filename}"
+    db.commit()
+    db.refresh(project)
+    return project
+
+
+@app.get("/projects/{project_id}/photo")
+def get_site_photo(
+    project_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    project = db.query(Project).filter(Project.id == project_id, Project.owner_id == current_user.id).first()
+    if not project or not project.site_photo_url:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    filepath = os.path.join(UPLOAD_DIR, os.path.basename(project.site_photo_url))
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="Photo file not found")
+    with open(filepath, "rb") as f:
+        return Response(content=f.read(), media_type="image/jpeg")
+
+
+@app.post("/projects/{project_id}/share", response_model=ProjectRead)
+def share_project(
+    project_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    project = db.query(Project).filter(Project.id == project_id, Project.owner_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if not project.public_token:
+        project.public_token = secrets.token_urlsafe(24)
+    project.is_public = 1
+    db.commit()
+    db.refresh(project)
+    return project
+
+
+@app.post("/projects/{project_id}/unshare", response_model=ProjectRead)
+def unshare_project(
+    project_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    project = db.query(Project).filter(Project.id == project_id, Project.owner_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    project.is_public = 0
+    db.commit()
+    db.refresh(project)
+    return project
+
+
+@app.get("/public/{public_token}", response_model=ProjectPublicRead)
+def get_public_project(public_token: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(
+        Project.public_token == public_token,
+        Project.is_public == 1,
+    ).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found or not public")
+    return project
 
 
 @app.post("/ai/chat")
