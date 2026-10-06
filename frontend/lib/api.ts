@@ -190,6 +190,23 @@ export async function exportReport(payload: {
   return response.data;
 }
 
+export async function exportExecDocs(payload: {
+  title: string;
+  description?: string;
+  floorPlan: FloorPlan;
+  parameters?: Record<string, unknown>;
+  regionFactor?: number;
+}) {
+  const response = await api.post("/export/exec-docs", {
+    title: payload.title,
+    description: payload.description,
+    floor_plan: payload.floorPlan,
+    parameters: payload.parameters,
+    region_factor: payload.regionFactor ?? 1.0,
+  }, { responseType: "blob" });
+  return response.data;
+}
+
 export async function uploadSitePhoto(projectId: number, file: File) {
   const formData = new FormData();
   formData.append("file", file);

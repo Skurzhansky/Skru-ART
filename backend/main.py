@@ -43,7 +43,7 @@ from ai_service import (
 )
 from floor_plan_generator import generate_rectangular_plan
 from cost_estimator import estimate_costs
-from export_service import generate_plan_pdf, generate_plan_dxf, generate_plan_svg, generate_project_report
+from export_service import generate_plan_pdf, generate_plan_dxf, generate_plan_svg, generate_project_report, generate_executive_docs
 
 Base.metadata.create_all(bind=engine)
 
@@ -540,6 +540,23 @@ def export_report(payload: ExportRequest):
         content=report_text,
         media_type="text/plain; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}-report.txt"'},
+    )
+
+
+@app.post("/export/exec-docs")
+def export_exec_docs(payload: ExportRequest):
+    pdf_bytes = generate_executive_docs(
+        project_title=payload.title,
+        project_description=payload.description,
+        floor_plan=payload.floor_plan,
+        estimate=estimate_costs(payload.floor_plan, region_factor=payload.region_factor or 1.0),
+        parameters=payload.parameters,
+    )
+    filename = _safe_filename(payload.title)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}-exec-docs.pdf"'},
     )
 
 

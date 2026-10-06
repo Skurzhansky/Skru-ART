@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { getProject, updateProject, exportPdf, exportSvg, exportDxf, exportReport, uploadSitePhoto, shareProject, unshareProject, saveProjectVersion, listProjectVersions, restoreProjectVersion } from "@/lib/api";
+import { getProject, updateProject, exportPdf, exportSvg, exportDxf, exportReport, exportExecDocs, uploadSitePhoto, shareProject, unshareProject, saveProjectVersion, listProjectVersions, restoreProjectVersion } from "@/lib/api";
 import { Project, FloorPlan, CostEstimate } from "@/lib/types";
 import FloorPlanEditor from "@/components/FloorPlanEditor";
 import House3DViewer from "@/components/House3DViewer";
@@ -153,6 +153,25 @@ export default function ProjectPage() {
       downloadBlob(blob, `${project.title}-report.txt`);
     } catch (err: any) {
       setError(err.response?.data?.detail || "Ошибка экспорта отчёта");
+    } finally {
+      setExporting(false);
+      setExportMenuOpen(false);
+    }
+  };
+
+  const handleExportExecDocs = async () => {
+    if (!project) return;
+    setExporting(true);
+    try {
+      const blob = await exportExecDocs({
+        title: project.title,
+        description: project.description,
+        floorPlan,
+        parameters: project.parameters,
+      });
+      downloadBlob(blob, `${project.title}-exec-docs.pdf`);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || "Ошибка экспорта исполнительной документации");
     } finally {
       setExporting(false);
       setExportMenuOpen(false);
@@ -339,7 +358,8 @@ export default function ProjectPage() {
                 <button onClick={handleExportPdf} disabled={exporting} className="block w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50">PDF</button>
                 <button onClick={handleExportSvg} disabled={exporting} className="block w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50">SVG</button>
                 <button onClick={handleExportDxf} disabled={exporting} className="block w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50">DXF</button>
-                <button onClick={handleExportReport} disabled={exporting} className="block w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-700 last:rounded-b-lg disabled:opacity-50">Отчёт (TXT)</button>
+                <button onClick={handleExportReport} disabled={exporting} className="block w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50">Отчёт (TXT)</button>
+                <button onClick={handleExportExecDocs} disabled={exporting} className="block w-full text-left px-4 py-2 text-sm text-slate-200 hover:bg-slate-700 last:rounded-b-lg disabled:opacity-50">Исполнительная документация</button>
               </div>
             )}
           </div>
@@ -406,6 +426,7 @@ export default function ProjectPage() {
               <button onClick={handleExportSvg} disabled={exporting} className="w-full flex items-center gap-2 px-4 py-3 text-sm text-slate-200 hover:bg-slate-700">Экспорт SVG</button>
               <button onClick={handleExportDxf} disabled={exporting} className="w-full flex items-center gap-2 px-4 py-3 text-sm text-slate-200 hover:bg-slate-700">Экспорт DXF</button>
               <button onClick={handleExportReport} disabled={exporting} className="w-full flex items-center gap-2 px-4 py-3 text-sm text-slate-200 hover:bg-slate-700">Отчёт (TXT)</button>
+              <button onClick={handleExportExecDocs} disabled={exporting} className="w-full flex items-center gap-2 px-4 py-3 text-sm text-slate-200 hover:bg-slate-700">Исполнительная документация</button>
             </div>
             <div className="border-t border-slate-700 p-2">
               <button
